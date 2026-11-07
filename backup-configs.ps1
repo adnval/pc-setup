@@ -4,12 +4,31 @@
     listed in configs\map.json into this folder so you can commit and push them.
 #>
 $ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'lib\Download.ps1')
-$map = Get-Content (Join-Path $PSScriptRoot 'configs\map.json') -Raw | ConvertFrom-Json
+
+# The repo folder (the one holding configs\ and lib\). $PSScriptRoot is empty when
+# the script is pasted in or run from the ISE, so fall back to other options.
+$root = $PSScriptRoot
+if (-not $root -and $MyInvocation.MyCommand.Path) { $root = Split-Path $MyInvocation.MyCommand.Path }
+if (-not $root) { $root = (Get-Location).Path }
+
+$mapFile = Join-Path $root 'configs\map.json'
+$libFile = Join-Path $root 'lib\Download.ps1'
+foreach ($need in $mapFile, $libFile) {
+    if (-not (Test-Path -LiteralPath $need -PathType Leaf)) {
+        Write-Host "Can't find $need" -ForegroundColor Red
+        Write-Host 'Run this from inside the extracted pc-setup-main folder (the one with the configs and lib folders):' -ForegroundColor Yellow
+        Write-Host '  powershell -ExecutionPolicy Bypass -File .\backup-configs.ps1'
+        exit 1
+    }
+}
+
+. $libFile
+# [IO.File]::ReadAllText instead of Get-Content -Raw: works in every PowerShell version.
+$map = [IO.File]::ReadAllText($mapFile) | ConvertFrom-Json
 
 foreach ($entry in $map) {
     $from = Expand-ConfigPath $entry.Target
-    $to = Join-Path $PSScriptRoot $entry.Repo
+    $to = Join-Path $root $entry.Repo
     if (-not (Test-Path $from)) { Write-Host "skip   $($entry.App): $from not found" -ForegroundColor Yellow; continue }
 
     $running = @($entry.StopProcesses | Where-Object { $_ } | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue })

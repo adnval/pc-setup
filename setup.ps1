@@ -112,7 +112,8 @@ if (-not $ConfigsOnly) {
 # --- Restore configs ---
 if (-not $SkipConfigs -and -not $DryRun) {
     $mapFile = Join-Path $PSScriptRoot 'configs\map.json'
-    $map = Get-Content $mapFile -Raw | ConvertFrom-Json
+    if (-not (Test-Path -LiteralPath $mapFile -PathType Leaf)) { throw "Can't find $mapFile" }
+    $map = [IO.File]::ReadAllText($mapFile) | ConvertFrom-Json
     foreach ($entry in $map) {
         if ($Only -and $Only -notcontains $entry.App) { continue }
         if ($Skip -and $Skip -contains $entry.App) { continue }

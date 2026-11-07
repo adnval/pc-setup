@@ -6,7 +6,10 @@ manager like winget is used. My config files are copied back into place at the e
 
 ## 1. Before wiping: back up configs
 
-On the old install, clone this repo, then in PowerShell:
+On the old install, clone this repo (or download it with **Code → Download ZIP** and
+extract it). Open PowerShell **inside the repo folder**, the one with the `configs` and
+`lib` folders (`pc-setup` or `pc-setup-main`), and run the script as a file. Don't paste
+its contents or run it from the ISE:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\backup-configs.ps1
