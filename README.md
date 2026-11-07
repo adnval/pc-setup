@@ -19,7 +19,7 @@ This copies the files listed in `configs/map.json`:
 
 | App | What | Where |
 |---|---|---|
-| OBS Studio | profiles, scene collections, global settings | `%APPDATA%\obs-studio\basic`, `global.ini` |
+| OBS Studio | profiles, scene collections, app settings and window layout | `%APPDATA%\obs-studio\basic`, `global.ini`, `user.ini` |
 | LosslessCut | settings | `%APPDATA%\LosslessCut\config.json` |
 | Logitech G HUB | device profiles, macros, lighting | `%LOCALAPPDATA%\LGHUB\settings.db` |
 
