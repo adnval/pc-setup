@@ -92,6 +92,12 @@ Portable apps go in `C:\Program Files\<Name>` and get a Start Menu shortcut.
 To change which Office apps are installed, edit `office/Configuration.xml`
 (or make a new one at config.office.com).
 
+**OBS autostart:** setup creates the scheduled task **OBS Studio (replay buffer)**. At each
+logon it starts `obs64.exe --startreplaybuffer --minimize-to-tray` as admin (no UAC
+prompt), with *Start in* set to `C:\Program Files\obs-studio\bin\64bit`. Re-running
+setup replaces the task. To remove it, delete it in Task Scheduler or run
+`Unregister-ScheduledTask 'OBS Studio (replay buffer)'` in an admin PowerShell.
+
 ## Adding a program
 
 Add an entry to `apps.ps1`. Example for a GitHub release:

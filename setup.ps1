@@ -153,6 +153,23 @@ if (-not $SkipConfigs -and -not $DryRun) {
     }
 }
 
+# --- OBS autostart (scheduled task) ---
+if ((-not $Only -or $Only -contains 'OBS') -and -not ($Skip -and $Skip -contains 'OBS')) {
+    Write-Step 'OBS autostart (scheduled task)'
+    if ($DryRun) {
+        Add-Result 'OBS autostart' 'DryRun' "would create task '$script:ObsTaskName'"
+    } else {
+        try {
+            $taskUser = Register-ObsLogonTask
+            Write-Ok "Task '$script:ObsTaskName' starts OBS at logon for $taskUser"
+            Add-Result 'OBS autostart' 'OK' $script:ObsTaskName
+        } catch {
+            Write-Warn2 "FAILED: $($_.Exception.Message)"
+            Add-Result 'OBS autostart' 'FAILED' $_.Exception.Message
+        }
+    }
+}
+
 Write-Host ''
 $results | Format-Table -AutoSize
 $failed  = @($results | Where-Object Result -eq 'FAILED')

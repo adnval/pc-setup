@@ -219,3 +219,30 @@ function Show-FinalMessage {
         [void](Read-Host "$Title - press Enter to close")
     }
 }
+
+# --- OBS autostart --------------------------------------------------------------
+
+$script:ObsTaskName = 'OBS Studio (replay buffer)'
+
+function Get-CurrentUserName { [Security.Principal.WindowsIdentity]::GetCurrent().Name }
+
+# Scheduled task: at logon of the current user, start OBS as admin (no UAC prompt),
+# minimized to the tray with the replay buffer running. "Start in" must be OBS's
+# own folder or OBS can't find its language files and won't start.
+function Register-ObsLogonTask {
+    $dir = Join-Path $env:ProgramFiles 'obs-studio\bin\64bit'
+    $exe = Join-Path $dir 'obs64.exe'
+    if (-not (Test-Path -LiteralPath $exe)) { throw "OBS not found at $exe" }
+    $user = Get-CurrentUserName
+
+    $action    = New-ScheduledTaskAction -Execute $exe -Argument '--startreplaybuffer --minimize-to-tray' -WorkingDirectory $dir
+    $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+    $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+
+    Register-ScheduledTask -TaskName $script:ObsTaskName -Action $action -Trigger $trigger `
+        -Principal $principal -Settings $settings -Force `
+        -Description 'Starts OBS at logon, minimized to the tray, with the replay buffer running. Created by pc-setup.' | Out-Null
+    $user
+}
