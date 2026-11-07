@@ -63,30 +63,18 @@ iex "& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/ref
     @{ Name = 'Revo'; Detect = '^Revo Uninstaller'; Type = 'exe'; Args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
        Resolve = { @{ Url = 'https://download.revouninstaller.com/download/revosetup.exe'; Name = 'revosetup.exe' } } }
 
-    # HWiNFO64. Both sources are behind Cloudflare, which can refuse scripts, so it tries:
-    #   1. dappcdn.com direct download   2. the newest hwi64_XXX.exe link on hwinfo.com
-    # The installer must carry a valid signature from HWiNFO's developer (REALiX / Martin Malik)
-    # before it runs. If every source fails, the download page opens in your browser.
+    # HWiNFO64 from its official SourceForge project (newest hwi64_XXX.exe in Windows_Installer).
+    # The installer must carry a valid signature from HWiNFO's developer (REALiX / Martin Malik).
     @{ Name = 'HWiNFO'; Detect = '^HWiNFO'; Type = 'script'
        Run = {
-           $page = 'https://www.hwinfo.com/download/'
-           $sources = @(
-               { 'https://dappcdn.com/download/utilities/hwinfo' },
-               { Get-LinkFromPage $page '[^"''\s<>]*hwi(64)?_\d+\.exe' }
-           )
-           $file = $null
-           foreach ($src in $sources) {
-               try {
-                   $u = & $src
-                   Write-Ok "Trying $u"
-                   $file = Save-Download -Url $u -FileName 'hwinfo_setup.exe'   # rejects web pages
-                   break
-               } catch { Write-Warn2 "  $($_.Exception.Message)" }
-           }
-           if (-not $file) {
-               Start-Process $page
-               throw 'Could not download HWiNFO (Cloudflare check). Its download page is open in your browser; install it from there.'
-           }
+           [xml]$rss = (Invoke-WebRequest -UseBasicParsing -UserAgent $script:UA -Uri 'https://sourceforge.net/projects/hwinfo/rss?path=/Windows_Installer').Content
+           $name = $rss.rss.channel.item | ForEach-Object { $_.SelectSingleNode('title').InnerText.Trim().Split('/')[-1] } |
+               Where-Object { $_ -match '^hwi64_\d+\.exe$' } |
+               Sort-Object { [int]($_ -replace '\D', '') } -Descending | Select-Object -First 1
+           if (-not $name) { throw 'No hwi64_XXX.exe found on SourceForge' }
+           $u = "https://downloads.sourceforge.net/project/hwinfo/Windows_Installer/$name"
+           Write-Ok "Source: $u"
+           $file = Save-Download -Url $u -FileName $name   # rejects web pages
            $sig = Get-AuthenticodeSignature $file
            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'REALiX|Mal[ií]k') {
                throw "HWiNFO installer signature check failed ($($sig.Status), signer: $($sig.SignerCertificate.Subject)). Not running it."
