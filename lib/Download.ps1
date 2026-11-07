@@ -132,21 +132,3 @@ function Expand-ConfigPath([string]$Path) {
     $docs = [Environment]::GetFolderPath('MyDocuments')
     [Environment]::ExpandEnvironmentVariables(($Path -replace '%DOCUMENTS%', $docs.Replace('$', '$$')))
 }
-
-# Blanks the value of every KEY=value line whose key matches $Pattern (for API keys etc.).
-function Remove-Secrets([string]$File, [string]$Pattern) {
-    $lines = Get-Content $File | ForEach-Object { if ($_ -match "^($Pattern)=") { "$($Matches[1])=" } else { $_ } }
-    Set-Content -Path $File -Value $lines -Encoding ASCII
-}
-
-# After restoring a scrubbed file: fills blanked KEY= lines back in from the
-# file that was there before (e.g. defaults the freshly installed app wrote).
-function Restore-Secrets([string]$File, [string]$Previous, [string]$Pattern) {
-    if (-not (Test-Path $Previous)) { return }
-    $old = @{}
-    Get-Content $Previous | ForEach-Object { if ($_ -match "^($Pattern)=(.+)$") { $old[$Matches[1]] = $Matches[2] } }
-    $lines = Get-Content $File | ForEach-Object {
-        if ($_ -match "^($Pattern)=$" -and $old.ContainsKey($Matches[1])) { "$($Matches[1])=$($old[$Matches[1]])" } else { $_ }
-    }
-    Set-Content -Path $File -Value $lines -Encoding ASCII
-}

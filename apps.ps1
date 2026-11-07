@@ -37,16 +37,6 @@ iex "& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/ref
     @{ Name = 'Lightshot'; Detect = '^Lightshot'; Type = 'exe'; Args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
        Resolve = { @{ Url = 'https://app.prntscr.com/build/setup-lightshot.exe'; Name = 'setup-lightshot.exe' } } }
 
-    # 64-bit build with the 64-bit VST. It is an NSIS installer, so /S is its silent switch.
-    @{ Name = 'Clownfish'; Detect = 'Clownfish'; Type = 'exe'; Args = '/S'
-       Resolve = {
-           try {
-               $u = Get-LinkFromPage 'https://clownfish-translator.com/voicechanger/download.html' '[^"''\s]*download64f\.php[^"''\s]*'
-           } catch {
-               $u = 'https://clownfish-translator.com/voicechanger/download/download64f.php'
-           }
-           @{ Url = $u; Name = 'ClownfishSetup64.exe' } } }
-
     @{ Name = 'LGHub'; Detect = '^Logitech G HUB'; Type = 'exe'; Args = '--silent'
        Resolve = { @{ Url = 'https://download01.logitech.com/web/ftp/pub/techsupport/gaming/lghub_installer.exe'; Name = 'lghub_installer.exe' } } }
 

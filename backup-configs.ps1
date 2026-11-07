@@ -21,7 +21,6 @@ foreach ($entry in $map) {
     if (Test-Path $to) { Remove-Item $to -Recurse -Force }
     New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
     Copy-Item $from $to -Recurse -Force
-    if ($entry.Scrub) { Remove-Secrets -File $to -Pattern $entry.Scrub }   # keep API keys out of the public repo
     Write-Host "saved  $($entry.App): $from" -ForegroundColor Green
 }
 

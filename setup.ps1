@@ -134,7 +134,6 @@ if (-not $SkipConfigs -and -not $DryRun) {
             } else {
                 New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
                 Copy-Item $src $dest -Force
-                if ($entry.Scrub) { Restore-Secrets -File $dest -Previous "$dest.bak" -Pattern $entry.Scrub }
             }
             if ($entry.StopServices) {
                 foreach ($s in @($entry.StopServices)) { Start-Service -Name $s -ErrorAction SilentlyContinue }

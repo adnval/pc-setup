@@ -3,38 +3,46 @@
     "App": "OBS",
     "Repo": "configs/obs-studio/basic",
     "Target": "%APPDATA%\\obs-studio\\basic",
-    "StopProcesses": ["obs64"]
+    "StopProcesses": [
+      "obs64"
+    ]
   },
   {
     "App": "OBS",
     "Repo": "configs/obs-studio/global.ini",
     "Target": "%APPDATA%\\obs-studio\\global.ini",
-    "StopProcesses": ["obs64"]
+    "StopProcesses": [
+      "obs64"
+    ]
   },
   {
     "App": "OBS",
     "Repo": "configs/obs-studio/user.ini",
     "Target": "%APPDATA%\\obs-studio\\user.ini",
-    "StopProcesses": ["obs64"]
+    "StopProcesses": [
+      "obs64"
+    ]
   },
   {
     "App": "LosslessCut",
     "Repo": "configs/LosslessCut/config.json",
     "Target": "%APPDATA%\\LosslessCut\\config.json",
-    "StopProcesses": ["LosslessCut"]
+    "StopProcesses": [
+      "LosslessCut"
+    ]
   },
   {
     "App": "LGHub",
     "Repo": "configs/LGHUB/settings.db",
     "Target": "%LOCALAPPDATA%\\LGHUB\\settings.db",
-    "StopProcesses": ["lghub", "lghub_agent", "lghub_updater", "lghub_system_tray"],
-    "StopServices": ["LGHUBUpdaterService"]
-  },
-  {
-    "App": "Clownfish",
-    "Repo": "configs/Clownfish/ClownfishVoiceChanger.ini",
-    "Target": "%DOCUMENTS%\\ClownfishVoiceChanger.ini",
-    "StopProcesses": ["ClownfishVoiceChanger"],
-    "Scrub": "\\w+_APIKEY|AMAZON_ACCESSKEY"
+    "StopProcesses": [
+      "lghub",
+      "lghub_agent",
+      "lghub_updater",
+      "lghub_system_tray"
+    ],
+    "StopServices": [
+      "LGHUBUpdaterService"
+    ]
   }
 ]
