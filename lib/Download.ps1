@@ -1,7 +1,7 @@
 # Helper functions used by setup.ps1. Windows PowerShell 5.1 compatible.
 
 $script:UA = 'pc-setup-script'
-$script:ToolsDir = 'C:\Tools'
+$script:ToolsDir = $env:ProgramFiles   # portable apps go in C:\Program Files\<Name>
 $script:Downloads = Join-Path $env:TEMP 'pc-setup\downloads'
 
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
@@ -71,7 +71,7 @@ function Invoke-Installer {
     if ($p.ExitCode -notin 0, 3010, 1641) { throw "Installer exited with code $($p.ExitCode)" }
 }
 
-# Extracts .zip (built in) or .7z (needs 7-Zip) into C:\Tools\<Name>.
+# Extracts .zip (built in) or .7z (needs 7-Zip) into C:\Program Files\<Name>.
 function Expand-ToTools {
     param([string]$Archive, [string]$Name)
     $dest = Join-Path $script:ToolsDir $Name

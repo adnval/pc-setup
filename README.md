@@ -61,16 +61,18 @@ cd $env:TEMP\pc-setup\pc-setup-main
 | `Lightshot` | Lightshot | app.prntscr.com |
 | `Clownfish` | Clownfish Voice Changer | clownfish-translator.com |
 | `LGHub` | Logitech G HUB | logitech.com |
-| `LosslessCut` | LosslessCut (portable, `C:\Tools`) | GitHub `mifi/lossless-cut` |
-| `mpv` | mpv (portable, `C:\Tools`) | GitHub `shinchiro/mpv-winbuild-cmake` |
+| `LosslessCut` | LosslessCut (portable, `C:\Program Files`) | GitHub `mifi/lossless-cut` |
+| `mpv` | mpv (portable, `C:\Program Files`) | GitHub `shinchiro/mpv-winbuild-cmake` |
 | `PaintNET` | Paint.NET | GitHub `paintdotnet/release` |
 | `Revo` | Revo Uninstaller Free | revouninstaller.com |
-| `HWiNFO` | HWiNFO64 | HWiNFO's SourceForge mirror, then hwinfo.com |
-| `ZenTimings` | ZenTimings (portable, `C:\Tools`) | GitHub `irusanov/ZenTimings` |
-| `Office` | Microsoft Office | coming soon; see `office/README.md` |
+| `HWiNFO` | HWiNFO64 | hwinfo.com (if its Cloudflare check blocks the script, the download page opens in your browser) |
+| `ZenTimings` | ZenTimings (portable, `C:\Program Files`) | GitHub `irusanov/ZenTimings` |
+| `Office` | Microsoft 365 apps (no Teams/Outlook/OneDrive/OneNote/Access/Publisher) | Office Deployment Tool + `office/Configuration.xml` |
 
 GitHub downloads are checked against the SHA256 GitHub publishes, where there is one.
-Portable apps get a Start Menu shortcut.
+Portable apps go in `C:\Program Files\<Name>` and get a Start Menu shortcut.
+To change which Office apps are installed, edit `office/Configuration.xml`
+(or make a new one at config.office.com).
 
 ## Adding a program
 

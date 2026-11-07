@@ -104,14 +104,6 @@ if (-not $ConfigsOnly) {
     }
 }
 
-# --- Office (placeholder) ---
-$officeScript = Join-Path $PSScriptRoot 'office\install-office.ps1'
-if (-not $ConfigsOnly -and -not $DryRun -and (Test-Path $officeScript) -and
-    (-not $Only -or $Only -contains 'Office') -and -not ($Skip -contains 'Office')) {
-    Write-Step 'Office'
-    try { & $officeScript; Add-Result 'Office' 'OK' '' } catch { Add-Result 'Office' 'FAILED' $_.Exception.Message }
-}
-
 # --- Restore configs ---
 if (-not $SkipConfigs -and -not $DryRun) {
     $mapFile = Join-Path $PSScriptRoot 'configs\map.json'
