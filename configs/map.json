@@ -1,0 +1,27 @@
+[
+  {
+    "App": "OBS",
+    "Repo": "configs/obs-studio/basic",
+    "Target": "%APPDATA%\\obs-studio\\basic",
+    "StopProcesses": ["obs64"]
+  },
+  {
+    "App": "OBS",
+    "Repo": "configs/obs-studio/global.ini",
+    "Target": "%APPDATA%\\obs-studio\\global.ini",
+    "StopProcesses": ["obs64"]
+  },
+  {
+    "App": "LosslessCut",
+    "Repo": "configs/LosslessCut/config.json",
+    "Target": "%APPDATA%\\LosslessCut\\config.json",
+    "StopProcesses": ["LosslessCut"]
+  },
+  {
+    "App": "LGHub",
+    "Repo": "configs/LGHUB/settings.db",
+    "Target": "%LOCALAPPDATA%\\LGHUB\\settings.db",
+    "StopProcesses": ["lghub", "lghub_agent", "lghub_updater", "lghub_system_tray"],
+    "StopServices": ["LGHUBUpdaterService"]
+  }
+]

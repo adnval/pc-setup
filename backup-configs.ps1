@@ -1,0 +1,28 @@
+<#
+.SYNOPSIS
+    Run this on the CURRENT install, before wiping. It copies the config files
+    listed in configs\map.json into this folder so you can commit and push them.
+#>
+$ErrorActionPreference = 'Stop'
+$map = Get-Content (Join-Path $PSScriptRoot 'configs\map.json') -Raw | ConvertFrom-Json
+
+foreach ($entry in $map) {
+    $from = [Environment]::ExpandEnvironmentVariables($entry.Target)
+    $to = Join-Path $PSScriptRoot $entry.Repo
+    if (-not (Test-Path $from)) { Write-Host "skip   $($entry.App): $from not found" -ForegroundColor Yellow; continue }
+
+    $running = @($entry.StopProcesses | Where-Object { $_ } | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue })
+    if ($running) {
+        Write-Host "Close $($entry.App) first (running: $(($running.Name | Sort-Object -Unique) -join ', ')), then press Enter." -ForegroundColor Yellow
+        [void](Read-Host)
+    }
+
+    if (Test-Path $to) { Remove-Item $to -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
+    Copy-Item $from $to -Recurse -Force
+    Write-Host "saved  $($entry.App): $from" -ForegroundColor Green
+}
+
+Write-Host ''
+Write-Host 'Done. Check the configs folder for anything private, then commit and push:' -ForegroundColor Cyan
+Write-Host '  git add configs; git commit -m "Back up configs"; git push'

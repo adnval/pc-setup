@@ -1,0 +1,5 @@
+# Downloaded installers never belong in the repo
+*.exe
+*.msi
+*.7z
+*.zip
