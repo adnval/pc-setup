@@ -29,5 +29,12 @@
     "Target": "%LOCALAPPDATA%\\LGHUB\\settings.db",
     "StopProcesses": ["lghub", "lghub_agent", "lghub_updater", "lghub_system_tray"],
     "StopServices": ["LGHUBUpdaterService"]
+  },
+  {
+    "App": "Clownfish",
+    "Repo": "configs/Clownfish/ClownfishVoiceChanger.ini",
+    "Target": "%DOCUMENTS%\\ClownfishVoiceChanger.ini",
+    "StopProcesses": ["ClownfishVoiceChanger"],
+    "Scrub": "\\w+_APIKEY|AMAZON_ACCESSKEY"
   }
 ]

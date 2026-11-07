@@ -4,10 +4,11 @@
     listed in configs\map.json into this folder so you can commit and push them.
 #>
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'lib\Download.ps1')
 $map = Get-Content (Join-Path $PSScriptRoot 'configs\map.json') -Raw | ConvertFrom-Json
 
 foreach ($entry in $map) {
-    $from = [Environment]::ExpandEnvironmentVariables($entry.Target)
+    $from = Expand-ConfigPath $entry.Target
     $to = Join-Path $PSScriptRoot $entry.Repo
     if (-not (Test-Path $from)) { Write-Host "skip   $($entry.App): $from not found" -ForegroundColor Yellow; continue }
 
@@ -20,6 +21,7 @@ foreach ($entry in $map) {
     if (Test-Path $to) { Remove-Item $to -Recurse -Force }
     New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
     Copy-Item $from $to -Recurse -Force
+    if ($entry.Scrub) { Remove-Secrets -File $to -Pattern $entry.Scrub }   # keep API keys out of the public repo
     Write-Host "saved  $($entry.App): $from" -ForegroundColor Green
 }
 

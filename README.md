@@ -22,6 +22,10 @@ This copies the files listed in `configs/map.json`:
 | OBS Studio | profiles, scene collections, app settings and window layout | `%APPDATA%\obs-studio\basic`, `global.ini`, `user.ini` |
 | LosslessCut | settings | `%APPDATA%\LosslessCut\config.json` |
 | Logitech G HUB | device profiles, macros, lighting | `%LOCALAPPDATA%\LGHUB\settings.db` |
+| Clownfish | voice effect, pitch, devices, theme | `Documents\ClownfishVoiceChanger.ini` |
+
+API keys in the Clownfish file (`*_APIKEY`, `AMAZON_ACCESSKEY`) are blanked on backup so they
+never reach the public repo. On restore, any key the freshly installed Clownfish wrote is kept.
 
 > **This repo is public.** Before you push, check that nothing private is in `configs/`.
 > OBS stores stream keys in `basic\profiles\<name>\service.json`, so delete that file
