@@ -26,10 +26,15 @@ foreach ($need in $mapFile, $libFile) {
 # [IO.File]::ReadAllText instead of Get-Content -Raw: works in every PowerShell version.
 $map = [IO.File]::ReadAllText($mapFile) | ConvertFrom-Json
 
+$saved = 0; $skippedList = @(); $failedList = @()
 foreach ($entry in $map) {
     $from = Expand-ConfigPath $entry.Target
     $to = Join-Path $root $entry.Repo
-    if (-not (Test-Path $from)) { Write-Host "skip   $($entry.App): $from not found" -ForegroundColor Yellow; continue }
+    if (-not (Test-Path $from)) {
+        Write-Host "skip   $($entry.App): $from not found" -ForegroundColor Yellow
+        $skippedList += "  - $($entry.App): $(Split-Path $from -Leaf) not found"
+        continue
+    }
 
     $running = @($entry.StopProcesses | Where-Object { $_ } | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue })
     if ($running) {
@@ -37,12 +42,28 @@ foreach ($entry in $map) {
         [void](Read-Host)
     }
 
-    if (Test-Path $to) { Remove-Item $to -Recurse -Force }
-    New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
-    Copy-Item $from $to -Recurse -Force
-    Write-Host "saved  $($entry.App): $from" -ForegroundColor Green
+    try {
+        if (Test-Path $to) { Remove-Item $to -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
+        Copy-Item $from $to -Recurse -Force
+        Write-Host "saved  $($entry.App): $from" -ForegroundColor Green
+        $saved++
+    } catch {
+        Write-Host "FAILED $($entry.App): $($_.Exception.Message)" -ForegroundColor Red
+        $failedList += "  - $($entry.App): $($_.Exception.Message)"
+    }
 }
 
 Write-Host ''
 Write-Host 'Done. Check the configs folder for anything private, then commit and push:' -ForegroundColor Cyan
 Write-Host '  git add configs; git commit -m "Back up configs"; git push'
+
+$msg = "$saved config item(s) saved to the configs folder."
+if ($skippedList) { $msg += "`n`nNot found on this PC (skipped):`n" + ($skippedList -join "`n") }
+if ($failedList)  { $msg += "`n`nFailed:`n" + ($failedList -join "`n") + "`n`nClose those apps and run the backup again." }
+$msg += "`n`nBefore uploading, delete any service.json in configs\obs-studio\basic\profiles (it holds your stream key)."
+if ($failedList) {
+    Show-FinalMessage -Warning -Title 'pc-setup backup: finished with problems' -Message $msg
+} else {
+    Show-FinalMessage -Title 'pc-setup backup: completed successfully' -Message $msg
+}

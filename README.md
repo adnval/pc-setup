@@ -53,6 +53,10 @@ and each app looks like this (the download and install lines update in place):
     Installed
 ```
 
+At the end, a pop-up box (on top of all other windows) confirms that everything
+completed successfully, or lists exactly which steps failed. The backup script ends
+with the same kind of pop-up, listing what was saved and what wasn't found.
+
 To run it again from the downloaded copy with options:
 
 ```powershell

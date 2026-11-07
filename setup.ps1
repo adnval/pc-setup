@@ -155,8 +155,22 @@ if (-not $SkipConfigs -and -not $DryRun) {
 
 Write-Host ''
 $results | Format-Table -AutoSize
-if ($results.Result -contains 'FAILED') {
+$failed  = @($results | Where-Object Result -eq 'FAILED')
+$ok      = @($results | Where-Object Result -eq 'OK').Count
+$skipped = @($results | Where-Object Result -eq 'Skipped').Count
+
+if ($DryRun) {
+    Write-Host 'Dry run finished. Nothing was installed or changed.' -ForegroundColor Green
+    Show-FinalMessage -Title 'pc-setup: dry run finished' -Message "Dry run finished. Nothing was installed or changed.`n`nThe console window lists every download link."
+} elseif ($failed) {
     Write-Host 'Some steps failed. Fix the cause and run again; finished apps are skipped.' -ForegroundColor Yellow
+    $list = ($failed | ForEach-Object { "  - $($_.App): $($_.Detail)" }) -join "`n"
+    Show-FinalMessage -Warning -Title 'pc-setup: finished with problems' -Message ("$($failed.Count) step(s) failed:`n`n$list`n`n" +
+        "$ok succeeded and $skipped were already installed.`nRun the script again to retry; finished apps are skipped.")
 } else {
     Write-Host 'All done. A restart is recommended.' -ForegroundColor Green
+    $note = ''
+    if ($results.App -contains 'SpotX') { $note = "`n`nSpotX finishes in its own window if it is still open." }
+    Show-FinalMessage -Title 'pc-setup: all done' -Message ("Everything completed successfully.`n`n" +
+        "$ok step(s) done and $skipped already installed.$note`n`nA restart is recommended.")
 }

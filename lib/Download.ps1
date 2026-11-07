@@ -199,3 +199,23 @@ function Expand-ConfigPath([string]$Path) {
     $docs = [Environment]::GetFolderPath('MyDocuments')
     [Environment]::ExpandEnvironmentVariables(($Path -replace '%DOCUMENTS%', $docs.Replace('$', '$$')))
 }
+
+# --- Final confirmation -------------------------------------------------------
+
+# Pops up a message box that stays on top of every other window, so the end of the
+# run is noticed even when installer windows are in front. Falls back to a console
+# prompt where no message box can be shown.
+function Show-FinalMessage {
+    param([string]$Title, [string]$Message, [switch]$Warning)
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }
+        $icon = if ($Warning) { [System.Windows.Forms.MessageBoxIcon]::Warning } else { [System.Windows.Forms.MessageBoxIcon]::Information }
+        [void][System.Windows.Forms.MessageBox]::Show($owner, $Message, $Title, [System.Windows.Forms.MessageBoxButtons]::OK, $icon)
+        $owner.Dispose()
+    } catch {
+        Write-Host ''
+        Write-Host $Message
+        [void](Read-Host "$Title - press Enter to close")
+    }
+}
