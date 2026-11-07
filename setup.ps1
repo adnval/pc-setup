@@ -49,11 +49,14 @@ function Add-Result($name, $status, $detail) {
 
 # --- Install programs ---
 if (-not $ConfigsOnly) {
-    foreach ($app in $Apps) {
-        if ($Only -and $Only -notcontains $app.Name) { continue }
-        if ($Skip -and $Skip -contains $app.Name) { continue }
-
-        Write-Step $app.Name
+    $selected = @($Apps | Where-Object {
+        (-not $Only -or $Only -contains $_.Name) -and -not ($Skip -and $Skip -contains $_.Name)
+    })
+    $i = 0
+    foreach ($app in $selected) {
+        $i++
+        Show-OverallProgress -Index $i -Total $selected.Count -Name $app.Name
+        Write-Step "[$i/$($selected.Count)] $($app.Name)"
         try {
             $installed = if ($app.Detect -match '^[A-Za-z]:\\') { Test-Path $app.Detect } else { Test-Installed $app.Detect }
             if ($installed -and -not $Force) { Write-Ok 'Already installed, skipping'; Add-Result $app.Name 'Skipped' 'already installed'; continue }
@@ -90,6 +93,7 @@ if (-not $ConfigsOnly) {
                     Invoke-Installer -Path $msi.FullName
                 }
                 'portable' {
+                    Write-Ok "Extracting to $(Join-Path $script:ToolsDir $app.Name)"
                     $dest = Expand-ToTools -Archive $file -Name $app.Name
                     New-StartMenuShortcut -Name $app.Name -Target (Join-Path $dest $app.Exe)
                 }
@@ -102,6 +106,7 @@ if (-not $ConfigsOnly) {
             Add-Result $app.Name 'FAILED' $_.Exception.Message
         }
     }
+    Show-OverallProgress -Completed
 }
 
 # --- Restore configs ---

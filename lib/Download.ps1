@@ -36,16 +36,75 @@ function Get-LinkFromPage {
     $link
 }
 
+# --- Progress display --------------------------------------------------------
+
+# Rewrites the current console line (used for live download / install status).
+function Write-Status {
+    param([string]$Text, [switch]$Done, [string]$Color = 'Gray')
+    $w = 79
+    try { if ([Console]::WindowWidth -gt 20) { $w = [Console]::WindowWidth - 1 } } catch { }
+    $t = "    $Text"
+    if ($t.Length -gt $w) { $t = $t.Substring(0, $w) }
+    Write-Host ("`r" + $t.PadRight($w)) -NoNewline -ForegroundColor $Color
+    if ($Done) { Write-Host '' }
+}
+
+function Format-Elapsed([TimeSpan]$t) { '{0}:{1:00}' -f [int][math]::Floor($t.TotalMinutes), $t.Seconds }
+
+# Overall bar at the top of the window. It is redrawn once per app, so it costs nothing.
+# ($ProgressPreference is turned on only inside this function; setup.ps1 keeps it off
+# because PowerShell's own download progress bar makes downloads very slow.)
+function Show-OverallProgress {
+    param([int]$Index, [int]$Total, [string]$Name, [switch]$Completed)
+    $ProgressPreference = 'Continue'
+    if ($Completed) { Write-Progress -Id 1 -Activity 'Installing apps' -Completed; return }
+    Write-Progress -Id 1 -Activity 'Installing apps' -Status "$Index of ${Total}: $Name" `
+        -PercentComplete ([int](($Index - 1) * 100 / [math]::Max($Total, 1)))
+}
+
 # --- Downloading -------------------------------------------------------------
 
+# Downloads with a live "63%  95.9 / 152.4 MB  24.1 MB/s" line, updated twice a second.
 function Save-Download {
     param([string]$Url, [string]$FileName, [string]$Sha256)
     New-Item -ItemType Directory -Force -Path $script:Downloads | Out-Null
     $out = Join-Path $script:Downloads $FileName
-    Invoke-WebRequest -UseBasicParsing -UserAgent $script:UA -Uri $Url -OutFile $out
-    if ($out -match '\.(exe|msi)$') {
+
+    Add-Type -AssemblyName System.Net.Http
+    $client = New-Object System.Net.Http.HttpClient
+    $client.Timeout = [TimeSpan]::FromMinutes(30)
+    [void]$client.DefaultRequestHeaders.UserAgent.TryParseAdd($script:UA)
+    try {
+        $resp = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        if (-not $resp.IsSuccessStatusCode) { throw "Download failed: HTTP $([int]$resp.StatusCode) $($resp.ReasonPhrase)" }
+        $total = $resp.Content.Headers.ContentLength
+        $in = $resp.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $fs = [IO.File]::Create($out)
+        try {
+            $buf = New-Object byte[] (1MB)
+            $done = 0L
+            $sw = [Diagnostics.Stopwatch]::StartNew()
+            $lastDraw = -1000
+            while (($n = $in.Read($buf, 0, $buf.Length)) -gt 0) {
+                $fs.Write($buf, 0, $n)
+                $done += $n
+                if ($sw.ElapsedMilliseconds - $lastDraw -ge 500) {
+                    $lastDraw = $sw.ElapsedMilliseconds
+                    $speed = $done / 1MB / [math]::Max($sw.Elapsed.TotalSeconds, 0.001)
+                    if ($total) {
+                        Write-Status ('Downloading {0}  {1,3}%  {2:N1} / {3:N1} MB  {4:N1} MB/s' -f $FileName, [int]($done * 100 / $total), ($done / 1MB), ($total / 1MB), $speed)
+                    } else {
+                        Write-Status ('Downloading {0}  {1:N1} MB  {2:N1} MB/s' -f $FileName, ($done / 1MB), $speed)
+                    }
+                }
+            }
+            Write-Status ('Downloaded {0}  {1:N1} MB  ({2})' -f $FileName, ($done / 1MB), (Format-Elapsed $sw.Elapsed)) -Done -Color Green
+        } finally { $fs.Dispose(); $in.Dispose() }
+    } finally { $client.Dispose() }
+
+    if ($out -like '*.exe') {
         $head = [IO.File]::ReadAllBytes($out)[0..1]
-        if ($out -like '*.exe' -and -not ($head[0] -eq 0x4D -and $head[1] -eq 0x5A)) {
+        if (-not ($head[0] -eq 0x4D -and $head[1] -eq 0x5A)) {
             throw "$FileName is not a Windows program (the site probably returned a web page)"
         }
     }
@@ -59,15 +118,23 @@ function Save-Download {
 
 # --- Installing --------------------------------------------------------------
 
+# Runs an installer and shows "Installing... 0:45" until it exits (checked once a second).
+# Waits for the installer process itself, so an app it launches when finished
+# (e.g. Discord opening) does not hold up the script.
 function Invoke-Installer {
     param([string]$Path, [string]$Arguments)
     if ($Path -like '*.msi') {
-        $p = Start-Process msiexec.exe -ArgumentList "/i `"$Path`" /qn /norestart" -Wait -PassThru
+        $p = Start-Process msiexec.exe -ArgumentList "/i `"$Path`" /qn /norestart" -PassThru
     } elseif ($Arguments) {
-        $p = Start-Process $Path -ArgumentList $Arguments -Wait -PassThru
+        $p = Start-Process $Path -ArgumentList $Arguments -PassThru
     } else {
-        $p = Start-Process $Path -Wait -PassThru
+        $p = Start-Process $Path -PassThru
     }
+    $null = $p.Handle   # keeps the exit code readable after the process ends (PowerShell 5.1 quirk)
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $p.WaitForExit(1000)) { Write-Status "Installing... $(Format-Elapsed $sw.Elapsed)" }
+    $p.WaitForExit()
+    Write-Status "Installing... done ($(Format-Elapsed $sw.Elapsed))" -Done
     if ($p.ExitCode -notin 0, 3010, 1641) { throw "Installer exited with code $($p.ExitCode)" }
 }
 

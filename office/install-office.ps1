@@ -11,16 +11,13 @@ $config = Join-Path $PSScriptRoot 'Configuration.xml'
 if (-not (Test-Path $config)) { throw "Missing $config" }
 
 # Microsoft's permanent link to the latest ODT setup.exe.
-$work = Join-Path $env:TEMP 'pc-setup\office'
-New-Item -ItemType Directory -Force -Path $work | Out-Null
-$setup = Join-Path $work 'setup.exe'
-Invoke-WebRequest -UseBasicParsing -Uri 'https://officecdn.microsoft.com/pr/wsus/setup.exe' -OutFile $setup
+# Save-Download and Invoke-Installer come from lib\Download.ps1 (loaded by setup.ps1).
+$setup = Save-Download -Url 'https://officecdn.microsoft.com/pr/wsus/setup.exe' -FileName 'odt-setup.exe'
 
 $sig = Get-AuthenticodeSignature $setup
 if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
     throw "ODT setup.exe signature check failed ($($sig.Status), $($sig.SignerCertificate.Subject))"
 }
 
-Write-Host '    Installing Office (it downloads ~3 GB; the Office window shows progress)...'
-$p = Start-Process $setup -ArgumentList "/configure `"$config`"" -WorkingDirectory $work -Wait -PassThru
-if ($p.ExitCode -ne 0) { throw "Office Deployment Tool exited with code $($p.ExitCode)" }
+Write-Host '    Office downloads ~3 GB; its own window shows detailed progress.'
+Invoke-Installer -Path $setup -Arguments "/configure `"$config`""

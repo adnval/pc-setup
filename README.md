@@ -38,6 +38,18 @@ irm https://raw.githubusercontent.com/adnval/pc-setup/main/bootstrap.ps1 | iex
 A new admin window installs everything and prints a summary table. If something
 fails, run it again: programs that are already installed are skipped.
 
+While it runs, a bar at the top shows overall progress (`Installing apps: 5 of 14`),
+and each app looks like this (the download and install lines update in place):
+
+```
+==> [5/14] OBS
+    Source: https://github.com/obsproject/obs-studio/releases/download/...
+    Downloaded OBS-Studio-33.0.1-Windows-x64-Installer.exe  152.4 MB  (0:06)
+    SHA256 verified
+    Installing... done (0:38)
+    Installed
+```
+
 To run it again from the downloaded copy with options:
 
 ```powershell
