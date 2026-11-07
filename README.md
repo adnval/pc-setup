@@ -65,7 +65,7 @@ cd $env:TEMP\pc-setup\pc-setup-main
 | `mpv` | mpv (portable, `C:\Program Files`) | GitHub `shinchiro/mpv-winbuild-cmake` |
 | `PaintNET` | Paint.NET | GitHub `paintdotnet/release` |
 | `Revo` | Revo Uninstaller Free | revouninstaller.com |
-| `HWiNFO` | HWiNFO64 | hwinfo.com (if its Cloudflare check blocks the script, the download page opens in your browser) |
+| `HWiNFO` | HWiNFO64 | dappcdn.com, then hwinfo.com; signature checked before running (if both block the script, the download page opens in your browser) |
 | `ZenTimings` | ZenTimings (portable, `C:\Program Files`) | GitHub `irusanov/ZenTimings` |
 | `Office` | Microsoft 365 apps (no Teams/Outlook/OneDrive/OneNote/Access/Publisher) | Office Deployment Tool + `office/Configuration.xml` |
 

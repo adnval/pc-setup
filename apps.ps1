@@ -63,19 +63,37 @@ iex "& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/ref
     @{ Name = 'Revo'; Detect = '^Revo Uninstaller'; Type = 'exe'; Args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
        Resolve = { @{ Url = 'https://download.revouninstaller.com/download/revosetup.exe'; Name = 'revosetup.exe' } } }
 
-    # Newest installer linked from https://www.hwinfo.com/download/ (file name like hwi64_834.exe).
-    # hwinfo.com is behind Cloudflare, which can refuse scripts. If it does, the download
-    # page opens in your browser so you can install HWiNFO from there.
-    @{ Name = 'HWiNFO'; Detect = '^HWiNFO'; Type = 'exe'; Args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
-       Resolve = {
+    # HWiNFO64. Both sources are behind Cloudflare, which can refuse scripts, so it tries:
+    #   1. dappcdn.com direct download   2. the newest hwi64_XXX.exe link on hwinfo.com
+    # The installer must carry a valid signature from HWiNFO's developer (REALiX / Martin Malik)
+    # before it runs. If every source fails, the download page opens in your browser.
+    @{ Name = 'HWiNFO'; Detect = '^HWiNFO'; Type = 'script'
+       Run = {
            $page = 'https://www.hwinfo.com/download/'
-           try {
-               $u = Get-LinkFromPage $page '[^"''\s<>]*hwi(64)?_\d+\.exe'
-           } catch {
-               Start-Process $page
-               throw 'hwinfo.com blocked the script (Cloudflare check). Its download page is open in your browser; install HWiNFO from there.'
+           $sources = @(
+               { 'https://dappcdn.com/download/utilities/hwinfo' },
+               { Get-LinkFromPage $page '[^"''\s<>]*hwi(64)?_\d+\.exe' }
+           )
+           $file = $null
+           foreach ($src in $sources) {
+               try {
+                   $u = & $src
+                   Write-Ok "Trying $u"
+                   $file = Save-Download -Url $u -FileName 'hwinfo_setup.exe'   # rejects web pages
+                   break
+               } catch { Write-Warn2 "  $($_.Exception.Message)" }
            }
-           @{ Url = $u; Name = 'hwinfo_setup.exe' } } }
+           if (-not $file) {
+               Start-Process $page
+               throw 'Could not download HWiNFO (Cloudflare check). Its download page is open in your browser; install it from there.'
+           }
+           $sig = Get-AuthenticodeSignature $file
+           if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'REALiX|Mal[ií]k') {
+               throw "HWiNFO installer signature check failed ($($sig.Status), signer: $($sig.SignerCertificate.Subject)). Not running it."
+           }
+           Write-Ok "Signed by: $($sig.SignerCertificate.Subject)"
+           Invoke-Installer -Path $file -Arguments '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
+       } }
 
     @{ Name = 'ZenTimings'; Detect = "$env:ProgramFiles\ZenTimings\ZenTimings.exe"; Type = 'portable'; Exe = 'ZenTimings.exe'
        Resolve = { Get-GitHubAsset 'irusanov/ZenTimings' '^ZenTimings_.*\.zip$' } }
