@@ -139,6 +139,14 @@ if (-not $SkipConfigs -and -not $DryRun) {
                 Copy-Item (Join-Path $src '*') $dest -Recurse -Force
             } else {
                 New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
+                # SQLite databases (G HUB's settings.db) keep pending changes in -wal/-shm
+                # files. Leftovers from the fresh install would be replayed on top of the
+                # restored database, so set them aside.
+                if ($dest -like '*.db') {
+                    foreach ($side in "$dest-wal", "$dest-shm") {
+                        if (Test-Path -LiteralPath $side) { Move-Item -LiteralPath $side "$side.bak" -Force }
+                    }
+                }
                 Copy-Item $src $dest -Force
             }
             if ($entry.StopServices) {
