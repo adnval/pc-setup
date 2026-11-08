@@ -20,4 +20,6 @@ if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Micr
 }
 
 Write-Host '    Office downloads ~3 GB; its own window shows detailed progress.'
-Invoke-Installer -Path $setup -Arguments "/configure `"$config`""
+# -Hidden: the ODT setup.exe is a console program and would otherwise open an empty
+# console window. Office's own installer window (Display Level="Full") still appears.
+Invoke-Installer -Path $setup -Arguments "/configure `"$config`"" -Hidden
