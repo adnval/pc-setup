@@ -1,121 +1,138 @@
 # pc-setup
 
-Sets up my Windows 11 gaming PC after a clean install. Every program is downloaded
-from its official source (GitHub releases or the vendor's site), so no package
-manager like winget is used. My config files are copied back into place at the end.
+Sets up my Windows 11 gaming PC after a clean install. Every program is downloaded from
+its official source (GitHub releases, SourceForge or the vendor's site). No package
+manager like winget is used. My config files are put back afterwards.
+
+## What's in here
+
+| File | What it is |
+|---|---|
+| `apps.json` | **The list.** Every app: where to download it, how to install it, its config files and finishing steps. |
+| `setup.ps1` | Does everything in `apps.json`. |
+| `backup-configs.ps1` | Run on the old PC before wiping: copies the config files listed in `apps.json` into `configs/`. |
+| `bootstrap.ps1` | The target of the one-line command. Downloads this repo and starts `setup.ps1`. |
+| `configs/` | My backed-up config files, plus `Office/Configuration.xml` (which Office apps to install). |
 
 ## 1. Before wiping: back up configs
 
-On the old install, clone this repo (or download it with **Code → Download ZIP** and
-extract it). Open PowerShell **inside the repo folder**, the one with the `configs` and
-`lib` folders (`pc-setup` or `pc-setup-main`), and run the script as a file. Don't paste
-its contents or run it from the ISE:
+Download this repo (**Code → Download ZIP**, then extract it), open PowerShell **inside
+the extracted folder** (the one with `apps.json`), and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\backup-configs.ps1
-git add configs
-git commit -m "Back up configs"
-git push
 ```
 
-This copies the files listed in `configs/map.json`:
-
-| App | What | Where |
-|---|---|---|
-| OBS Studio | profiles, scene collections, app settings and window layout | `%APPDATA%\obs-studio\basic`, `global.ini`, `user.ini` |
-| LosslessCut | settings | `%APPDATA%\LosslessCut\config.json` |
-
-> **This repo is public.** Before you push, check that nothing private is in `configs/`.
-> OBS stores stream keys in `basic\profiles\<name>\service.json`, so delete that file
-> or make the repo private. If the repo is private, the one-liner below needs a token.
+Close the apps first; the script reminds you if one is still open. Then check `configs/`
+and **delete any `service.json` under `configs/obs-studio/basic/profiles/`**, because it
+holds your stream key and this repo is public. Upload the `configs` folder to GitHub.
 
 ## 2. After wiping: run setup
 
-Open **PowerShell** (no admin needed; it asks for admin itself) and run:
+Open PowerShell and run:
 
 ```powershell
 irm https://raw.githubusercontent.com/adnval/pc-setup/main/bootstrap.ps1 | iex
 ```
 
-If that PowerShell is already running **as admin**, setup runs right there in the same
-window. Otherwise you get a UAC prompt and setup runs in a new admin window (Windows can't
-switch an open window to admin). Either way, setup installs everything and prints a
-summary table. If something
-fails, run it again: programs that are already installed are skipped.
+If that PowerShell is already running as admin, setup runs in the same window.
+Otherwise you get a UAC prompt and setup runs in a new admin window. Windows can't switch
+an open window to admin.
 
-While it runs, a bar at the top shows overall progress (`Installing apps: 5 of 14`),
-and each app looks like this (the download and install lines update in place):
+For each app, in order, setup:
+1. **installs it**, or skips it if it's already installed;
+2. **restores its configs** from `configs/` (anything already there is kept as `.bak`);
+3. **runs its finishing steps**, e.g. the OBS logon task or a Start Menu shortcut.
 
 ```
-==> [5/14] OBS
+==> [2/13] OBS
     Source: https://github.com/obsproject/obs-studio/releases/download/...
     Downloaded OBS-Studio-33.0.1-Windows-x64-Installer.exe  152.4 MB  (0:06)
     SHA256 verified
     Installing... done (0:38)
     Installed
+    Restored obs-studio/basic
+    Scheduled task 'OBS Studio (replay buffer)' starts OBS at logon for PC\Kevin
 ```
 
-At the end, a pop-up box (on top of all other windows) confirms that everything
-completed successfully, or lists exactly which steps failed. The backup script ends
-with the same kind of pop-up, listing what was saved and what wasn't found.
+At the end you get a summary table and a pop-up that says everything worked, or lists
+what failed. Run it again to retry: finished apps are skipped.
 
-To run it again from the downloaded copy with options:
+### Options
+
+From the downloaded copy (`cd $env:TEMP\pc-setup\pc-setup-main`):
 
 ```powershell
-cd $env:TEMP\pc-setup\pc-setup-main
-.\setup.ps1 -DryRun                 # list every download link and size, change nothing
-.\setup.ps1 -Only OBS,Discord       # install just these
-.\setup.ps1 -Skip Office,Revo       # everything except these
-.\setup.ps1 -ConfigsOnly            # only copy configs back
-.\setup.ps1 -Force                  # reinstall even if already installed
+.\setup.ps1 -DryRun              # show every download link and step, change nothing
+.\setup.ps1 -Only OBS,Discord    # just these apps
+.\setup.ps1 -Skip Office         # everything except these
+.\setup.ps1 -ConfigsOnly         # only copy configs back
+.\setup.ps1 -SkipConfigs         # install, but leave configs alone
+.\setup.ps1 -Force               # reinstall apps that are already installed
 ```
 
-## Programs
+## The apps
 
-| Name (for -Only/-Skip) | Program | Source |
+| Name | App | Notes |
 |---|---|---|
-| `7zip` | 7-Zip | GitHub `ip7z/7zip` |
-| `OBS` | OBS Studio | GitHub `obsproject/obs-studio` |
-| `Discord` | Discord | discord.com |
-| `SpotX` | Spotify + SpotX | SpotX `run.ps1` (opens in its own window) |
-| `NotepadPP` | Notepad++ | GitHub `notepad-plus-plus/notepad-plus-plus` |
-| `Lightshot` | Lightshot | app.prntscr.com |
-| `LosslessCut` | LosslessCut (portable, `C:\Program Files`) | GitHub `mifi/lossless-cut` |
-| `mpv` | mpv (portable, `C:\Program Files`) | GitHub `shinchiro/mpv-winbuild-cmake` |
-| `PaintNET` | Paint.NET | GitHub `paintdotnet/release` |
-| `Revo` | Revo Uninstaller Free | revouninstaller.com |
-| `HWiNFO` | HWiNFO64 | SourceForge `hwinfo` (signature checked before running) |
-| `ZenTimings` | ZenTimings (portable, `C:\Program Files`) | GitHub `irusanov/ZenTimings` |
-| `Office` | Microsoft 365 apps (no Teams/Outlook/OneDrive/OneNote/Access/Publisher) | Office Deployment Tool + `office/Configuration.xml` |
+| `7zip` | 7-Zip | First, because LosslessCut and mpv are .7z archives |
+| `OBS` | OBS Studio | Configs restored; logon task (see below) |
+| `Discord` | Discord | |
+| `SpotX` | Spotify + SpotX | Runs in its own normal-user window (Spotify won't install as admin) |
+| `NotepadPP` | Notepad++ | |
+| `Lightshot` | Lightshot | |
+| `LosslessCut` | LosslessCut | Portable; config restored |
+| `mpv` | mpv | Portable; registers its file types (see below) |
+| `PaintNET` | Paint.NET | |
+| `Revo` | Revo Uninstaller Free | |
+| `HWiNFO` | HWiNFO64 | From SourceForge; must be signed by REALiX |
+| `ZenTimings` | ZenTimings | Portable |
+| `Office` | Microsoft 365 apps | Office Deployment Tool + `configs/Office/Configuration.xml`; must be signed by Microsoft |
 
-GitHub downloads are checked against the SHA256 GitHub publishes, where there is one.
-Portable apps (LosslessCut, mpv, ZenTimings) go in `C:\Program Files\<Name>`, with a
-Start Menu shortcut in `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<Name>.lnk`.
-Re-running setup recreates a missing shortcut even if the app is already installed.
+**Portable apps** go in `C:\Program Files\<name>` with a Start Menu shortcut
+(`C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<name>.lnk`). Re-running setup
+recreates a missing shortcut.
 
-**mpv file types:** after unpacking, setup runs mpv's own `installer\mpv-install.bat /u`
-(unattended). It registers mpv for video/audio files, "Open with" and Default Apps, and is
-skipped if mpv is already registered at that path (`-Force` re-runs it). Windows doesn't let
-scripts change your *default* apps, so to make mpv the default player, go to
-**Settings → Apps → Default apps → mpv** and pick the file types.
-To change which Office apps are installed, edit `office/Configuration.xml`
-(or make a new one at config.office.com).
+**mpv file types:** setup runs mpv's own `installer\mpv-install.bat /u`, which registers mpv
+for video and audio files, "Open with" and Default Apps. It's skipped when mpv is already
+registered (`-Force` re-runs it). Windows doesn't let scripts change your *default* apps,
+so pick mpv in **Settings → Apps → Default apps → mpv**.
 
-**OBS autostart:** setup creates the scheduled task **OBS Studio (replay buffer)**. At each
-logon it starts `obs64.exe --startreplaybuffer --minimize-to-tray` as admin (no UAC
-prompt), with *Start in* set to `C:\Program Files\obs-studio\bin\64bit`. Re-running
-setup replaces the task. To remove it, delete it in Task Scheduler or run
+**OBS logon task:** the scheduled task **OBS Studio (replay buffer)** starts
+`obs64.exe --startreplaybuffer --minimize-to-tray` at logon, as admin (no UAC prompt),
+with *Start in* set to `C:\Program Files\obs-studio\bin\64bit`. To remove it, run
 `Unregister-ScheduledTask 'OBS Studio (replay buffer)'` in an admin PowerShell.
 
-## Adding a program
+**Already installed?** Portable apps count as installed when their exe exists. Other apps
+count as installed when Windows' installed-programs list has a name matching their
+`detect` pattern.
 
-Add an entry to `apps.ps1`. Example for a GitHub release:
+## Adding or changing an app in apps.json
 
-```powershell
-@{ Name = 'MyApp'; Detect = '^MyApp'; Type = 'exe'; Args = '/S'
-   Resolve = { Get-GitHubAsset 'owner/repo' 'Setup-x64\.exe$' } }
+```jsonc
+{
+  "name": "OBS",                          // used with -Only / -Skip
+  "detect": "^OBS Studio",                // regex on the name in Settings > Apps (not needed for portable apps)
+  "source": { "github": "obsproject/obs-studio", "asset": "Windows-x64-Installer\\.exe$" },
+  "install": { "args": "/S" },            // silent-install arguments
+  "configs": [
+    { "repo": "obs-studio/basic",         // path inside configs/
+      "target": "%APPDATA%\\obs-studio\\basic",
+      "closeFirst": ["obs64"] }           // processes to close before copying
+  ],
+  "after": ["obsLogonTask"]               // finishing steps (see below)
+}
 ```
 
-`Detect` is a regex for the name shown in *Installed apps*. For portable apps, use the
-exe's path instead. To add a config, add an entry to `configs/map.json` and run
-`backup-configs.ps1` again.
+- **`source`**: one of
+  - `{ "github": "owner/repo", "asset": "<regex for the file name>" }`: the latest release; SHA256 checked when GitHub publishes one
+  - `{ "sourceforge": "<project>", "folder": "<folder>", "file": "<regex>" }`: the file with the highest number in its name
+  - `{ "url": "<direct link>", "file": "<name to save it as>" }`
+- **How it's installed**: one of
+  - `"install": { "args": "...", "signer": "<regex>", "hidden": true }`: runs an `.exe` with `args`, an `.msi` silently, or the `.msi` inside a `.zip`. `signer` (optional) refuses to run it unless it's validly signed by a matching publisher. `hidden` hides the installer's console window. `{configs}` in `args` becomes the path of the `configs` folder.
+  - `"portable": { "exe": "<program>.exe" }`: unpacks the `.zip` / `.7z` into `C:\Program Files\<name>` and adds a Start Menu shortcut
+  - `"runUnelevated": "<PowerShell command>"`: runs the command in a normal-user window (used for SpotX)
+- **`after`** steps (written in `setup.ps1`, safe to repeat): `mpvFileTypes`, `obsLogonTask`.
+- **`note`**: free text, ignored by the script.
+
+To back up a new config, add it to the app's `configs` and run `backup-configs.ps1` again.

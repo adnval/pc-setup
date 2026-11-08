@@ -1,0 +1,99 @@
+{
+  "apps": [
+    {
+      "name": "7zip",
+      "note": "First, because LosslessCut and mpv come as .7z archives.",
+      "detect": "^7-Zip",
+      "source": { "github": "ip7z/7zip", "asset": "^7z\\d+-x64\\.exe$" },
+      "install": { "args": "/S" }
+    },
+    {
+      "name": "OBS",
+      "detect": "^OBS Studio",
+      "source": { "github": "obsproject/obs-studio", "asset": "Windows-x64-Installer\\.exe$" },
+      "install": { "args": "/S" },
+      "configs": [
+        { "repo": "obs-studio/basic",      "target": "%APPDATA%\\obs-studio\\basic",      "closeFirst": ["obs64"] },
+        { "repo": "obs-studio/global.ini", "target": "%APPDATA%\\obs-studio\\global.ini", "closeFirst": ["obs64"] },
+        { "repo": "obs-studio/user.ini",   "target": "%APPDATA%\\obs-studio\\user.ini",   "closeFirst": ["obs64"] }
+      ],
+      "after": ["obsLogonTask"]
+    },
+    {
+      "name": "Discord",
+      "detect": "^Discord$",
+      "source": {
+        "url": "https://discord.com/api/downloads/distributions/app/installers/latest?channel=stable&platform=win&arch=x64",
+        "file": "DiscordSetup.exe"
+      },
+      "install": { "args": "-s" }
+    },
+    {
+      "name": "SpotX",
+      "note": "Installs Spotify and patches it. Spotify refuses to install as admin, so this runs in its own normal-user window.",
+      "detect": "^Spotify",
+      "runUnelevated": "iex \"& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/refs/heads/main/run.ps1') } -confirm_uninstall_ms_spoti -confirm_spoti_recomended_over -podcasts_off -block_update_on -start_spoti -new_theme -adsections_off -lyrics_stat spotify\""
+    },
+    {
+      "name": "NotepadPP",
+      "detect": "^Notepad\\+\\+",
+      "source": { "github": "notepad-plus-plus/notepad-plus-plus", "asset": "\\.Installer\\.x64\\.exe$" },
+      "install": { "args": "/S" }
+    },
+    {
+      "name": "Lightshot",
+      "detect": "^Lightshot",
+      "source": { "url": "https://app.prntscr.com/build/setup-lightshot.exe", "file": "setup-lightshot.exe" },
+      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" }
+    },
+    {
+      "name": "LosslessCut",
+      "source": { "github": "mifi/lossless-cut", "asset": "^LosslessCut-win-x64\\.7z$" },
+      "portable": { "exe": "LosslessCut.exe" },
+      "configs": [
+        { "repo": "LosslessCut/config.json", "target": "%APPDATA%\\LosslessCut\\config.json", "closeFirst": ["LosslessCut"] }
+      ]
+    },
+    {
+      "name": "mpv",
+      "note": "The v3 build needs a CPU from about 2015 or later (AVX2).",
+      "source": { "github": "shinchiro/mpv-winbuild-cmake", "asset": "^mpv-x86_64-v3-\\d+-git-.*\\.7z$" },
+      "portable": { "exe": "mpv.exe" },
+      "after": ["mpvFileTypes"]
+    },
+    {
+      "name": "PaintNET",
+      "detect": "^paint\\.net",
+      "source": { "github": "paintdotnet/release", "asset": "\\.winmsi\\.x64\\.zip$" },
+      "install": {}
+    },
+    {
+      "name": "Revo",
+      "detect": "^Revo Uninstaller",
+      "source": { "url": "https://download.revouninstaller.com/download/revosetup.exe", "file": "revosetup.exe" },
+      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" }
+    },
+    {
+      "name": "HWiNFO",
+      "detect": "^HWiNFO",
+      "source": { "sourceforge": "hwinfo", "folder": "Windows_Installer", "file": "^hwi64_\\d+\\.exe$" },
+      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", "signer": "REALiX" }
+    },
+    {
+      "name": "ZenTimings",
+      "source": { "github": "irusanov/ZenTimings", "asset": "^ZenTimings_.*\\.zip$" },
+      "portable": { "exe": "ZenTimings.exe" }
+    },
+    {
+      "name": "Office",
+      "note": "Microsoft 365 apps via the Office Deployment Tool. Which apps: configs/Office/Configuration.xml.",
+      "detect": "^Microsoft (365|Office)",
+      "source": { "url": "https://officecdn.microsoft.com/pr/wsus/setup.exe", "file": "odt-setup.exe" },
+      "install": {
+        "args": "/configure \"{configs}\\Office\\Configuration.xml\"",
+        "signer": "O=Microsoft Corporation",
+        "hidden": true
+      }
+    }
+  ]
+}
