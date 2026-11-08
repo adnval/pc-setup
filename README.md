@@ -45,6 +45,7 @@ Installed in this order (7-Zip first, because it unpacks the .7z downloads).
 | Name | App | Source | Extras |
 |---|---|---|---|
 | `7zip` | 7-Zip | GitHub | |
+| `Helium` | Helium browser | GitHub | Installed for all users (`C:\Program Files\imput\Helium`) |
 | `OBS` | OBS Studio | GitHub | Configs; starts at logon as admin, minimized to tray with the replay buffer running |
 | `Discord` | Discord | discord.com | |
 | `SpotX` | Spotify + SpotX | SpotX script | Runs in its own normal-user window |

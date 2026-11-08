@@ -8,6 +8,13 @@
       "detect": "^7-Zip"
     },
     {
+      "name": "Helium",
+      "source": "github:imputnet/helium-windows",
+      "file": "^helium_[\\d.]+_x64-installer\\.exe$",
+      "args": "/S /SYSTEM",
+      "exe": "%ProgramFiles%\\imput\\Helium\\Application\\chrome.exe"
+    },
+    {
       "name": "OBS",
       "source": "github:obsproject/obs-studio",
       "file": "Windows-x64-Installer\\.exe$",
