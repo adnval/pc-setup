@@ -2,7 +2,7 @@
 .SYNOPSIS
     Sets up this PC from apps.json: installs each app from its official source,
     restores its config files from configs\, and runs its finishing touches
-    (Start Menu shortcut, start at logon, after-install commands).
+    (shortcut, start at logon, after-install commands).
 
 .EXAMPLE
     .\setup.ps1                     # everything
@@ -108,26 +108,43 @@ function Show-FinalMessage {
 # %ProgramFiles%, %APPDATA% and other environment variables in a path.
 function Expand-Path($path) { [Environment]::ExpandEnvironmentVariables("$path") }
 
-# Every app has the same fields. This catches typos and missing values up front, with a
-# message that names the app and the field, before anything is installed.
-function Test-AppEntry($app) {
-    $problems = @()
-    $needsExe = $app.startMenuShortcut -or $app.startAtLogon.enabled -or @($app.afterInstall).Count
-    if (-not $app.name) { $problems += 'name is empty' }
-    switch ($app.type) {
-        'installer' { }
-        'portable'  { if (-not $app.exe) { $problems += 'exe is required for a portable app (it decides the folder)' } }
-        'command'   { if (-not $app.install.command) { $problems += 'install.command is required for type "command"' } }
-        default     { $problems += "type must be installer, portable or command (not '$($app.type)')" }
+# Every field an app can have, with its default. Apps only list what differs.
+$AppDefaults = [ordered]@{
+    name = ''; source = ''; file = ''; args = ''; signer = ''; hidden = $false
+    command = ''; runAsUser = $false; portable = $false; exe = ''; detect = ''
+    shortcut = $false; startAtLogon = $false; startArgs = ''; startAsAdmin = $false
+    afterInstall = @(); close = @(); configs = $null
+}
+
+# Returns the app with every field filled in (defaults for the missing ones).
+function Complete-App($entry) {
+    $app = [pscustomobject]$AppDefaults
+    foreach ($field in $entry.PSObject.Properties) {
+        if ($AppDefaults.Contains($field.Name)) { $app.($field.Name) = $field.Value }   # unknown ones are reported by Test-AppEntry
     }
-    if ($app.type -ne 'command') {
-        if ($app.source.from -notin 'github', 'sourceforge', 'url') { $problems += "source.from must be github, sourceforge or url (not '$($app.source.from)')" }
-        if (-not $app.source.location) { $problems += 'source.location is empty' }
-        if (-not $app.source.file)     { $problems += 'source.file is empty' }
+    $app.afterInstall = @($app.afterInstall | Where-Object { $_ })
+    $app.close = @($app.close | Where-Object { $_ })
+    $app
+}
+
+# Lists problems in one apps.json entry, naming the app and field, so typos are
+# caught before anything is installed.
+function Test-AppEntry($entry) {
+    $name = if ($entry.name) { $entry.name } else { '(no name)' }
+    $problems = @($entry.PSObject.Properties.Name | Where-Object { -not $AppDefaults.Contains($_) } |
+        ForEach-Object { "unknown field '$_' (typo?)" })
+    $app = Complete-App $entry
+    if (-not $app.name) { $problems += 'name is missing' }
+    if ($app.command) {
+        if ($app.source)   { $problems += 'use either command or source, not both' }
+    } else {
+        if ($app.source -notmatch '^(github|sourceforge):[^/]+/.+|^https?://') { $problems += "source must be github:owner/repo, sourceforge:project/folder or a https:// link (not '$($app.source)')" }
+        if (-not $app.file) { $problems += 'file is missing' }
     }
-    if ($needsExe -and -not $app.exe) { $problems += 'exe is required for startMenuShortcut, startAtLogon and afterInstall' }
-    if (-not $app.detect -and -not $app.exe) { $problems += 'set detect or exe, so setup can tell whether it is installed' }
-    $problems | ForEach-Object { "$($app.name): $_" }
+    if ($app.portable -and -not $app.exe) { $problems += 'portable needs exe (it decides the folder)' }
+    if (($app.shortcut -or $app.startAtLogon -or $app.afterInstall) -and -not $app.exe) { $problems += 'shortcut, startAtLogon and afterInstall need exe' }
+    if (-not $app.detect -and -not $app.exe) { $problems += 'needs detect or exe, to tell whether it is installed' }
+    $problems | ForEach-Object { "${name}: $_" }
 }
 
 
@@ -135,16 +152,14 @@ function Test-AppEntry($app) {
 #  Finding the download  (source)
 # =============================================================================
 
-# Returns @{ Url; FileName; Sha256 } (Sha256 only when GitHub publishes one).
-function Resolve-Source($source) {
-    switch ($source.from) {
-        'github'      { Get-GitHubAsset $source.location $source.file }
-        'sourceforge' { Get-SourceForgeFile $source.location $source.file }
-        'url'         { @{ Url = $source.location; FileName = $source.file } }
-    }
+# Turns source + file into @{ Url; FileName; Sha256 } (Sha256 only when GitHub publishes one).
+function Resolve-Source($app) {
+    if ($app.source -match '^github:(.+)$')      { return Get-GitHubAsset $Matches[1] $app.file }
+    if ($app.source -match '^sourceforge:(.+)$') { return Get-SourceForgeFile $Matches[1] $app.file }
+    @{ Url = $app.source; FileName = $app.file }
 }
 
-# The latest GitHub release's file whose name matches a regex. Location: "owner/repo".
+# github:owner/repo: the latest release's file whose name matches the regex.
 function Get-GitHubAsset($repo, $pattern) {
     $release = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = $UserAgent } `
         -Uri "https://api.github.com/repos/$repo/releases/latest"
@@ -155,7 +170,7 @@ function Get-GitHubAsset($repo, $pattern) {
     @{ Url = $asset.browser_download_url; FileName = $asset.name; Sha256 = $sha256 }
 }
 
-# The matching file with the highest number in its name. Location: "project/folder".
+# sourceforge:project/folder: the matching file with the highest number in its name.
 function Get-SourceForgeFile($location, $pattern) {
     [xml]$rss = (Invoke-WebRequest -UseBasicParsing -UserAgent $UserAgent `
         -Uri "https://sourceforge.net/projects/$($location -replace '/', '/rss?path=/')").Content
@@ -171,7 +186,7 @@ function Get-SourceForgeFile($location, $pattern) {
 
 
 # =============================================================================
-#  Downloading and installing  (type + install)
+#  Downloading and installing
 # =============================================================================
 
 # Downloads with a live "63%  95.9 / 152.4 MB  24.1 MB/s" line, then checks the file.
@@ -224,7 +239,7 @@ function Save-Download($url, $fileName, $sha256) {
     $path
 }
 
-# install.signer: refuse to continue unless the file is validly signed by a matching publisher.
+# signer: refuse to continue unless the file is validly signed by a matching publisher.
 function Assert-Signature($path, $signer) {
     $signature = Get-AuthenticodeSignature $path
     $subject = $signature.SignerCertificate.Subject
@@ -251,8 +266,8 @@ function Invoke-Installer {
     if ($process.ExitCode -notin 0, 3010, 1641) { throw "Exited with code $($process.ExitCode)" }
 }
 
-# type "installer": run the .exe with install.args, an .msi silently, or the .msi inside
-# a .zip. {configs} in install.args becomes this repo's configs folder.
+# Installers: run the .exe with args, an .msi silently, or the .msi inside a .zip.
+# {configs} in args becomes this repo's configs folder.
 function Install-Package($app, $path) {
     if ($path -like '*.zip') {
         $unzipped = Join-Path $DownloadDir "$($app.name)-unzipped"
@@ -261,11 +276,11 @@ function Install-Package($app, $path) {
         if (-not $msi) { throw "No .msi inside $(Split-Path $path -Leaf)" }
         $path = $msi.FullName
     }
-    $arguments = "$($app.install.args)".Replace('{configs}', $ConfigsDir)
-    Invoke-Installer -Path $path -Arguments $arguments -Hidden:([bool]$app.install.hidden)
+    $arguments = "$($app.args)".Replace('{configs}', $ConfigsDir)
+    Invoke-Installer -Path $path -Arguments $arguments -Hidden:$app.hidden
 }
 
-# type "portable": unpack the .zip or .7z into the folder that holds exe.
+# portable: unpack the .zip or .7z into the folder that holds exe.
 function Install-Portable($app, $archive) {
     $folder = Split-Path (Expand-Path $app.exe)
     Write-Info "Extracting to $folder"
@@ -287,19 +302,19 @@ function Install-Portable($app, $archive) {
     }
 }
 
-# type "command": run install.command in PowerShell. With install.runAsUser it runs as
-# the normal desktop user in its own window (Explorer always starts programs
-# un-elevated); otherwise it runs as admin and setup waits for it.
+# command: run it in PowerShell instead of downloading. With runAsUser it runs as the
+# normal desktop user in its own window (Explorer always starts programs un-elevated);
+# otherwise it runs as admin and setup waits for it.
 function Invoke-InstallCommand($app) {
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($app.install.command))
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($app.command))
     $powershell = "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
-    if ($app.install.runAsUser) {
+    if ($app.runAsUser) {
         $cmdFile = Join-Path $env:TEMP "pc-setup\$($app.name).cmd"
         New-Item -ItemType Directory -Force -Path (Split-Path $cmdFile) | Out-Null
         Set-Content -Path $cmdFile -Encoding ASCII -Value "@echo off`r`n$powershell`r`n"
         Start-Process explorer.exe -ArgumentList "`"$cmdFile`""
     } else {
-        Invoke-Installer -Path 'powershell.exe' -Arguments ($powershell -replace '^powershell ', '') -Hidden:([bool]$app.install.hidden)
+        Invoke-Installer -Path 'powershell.exe' -Arguments ($powershell -replace '^powershell ', '') -Hidden:$app.hidden
     }
 }
 
@@ -321,7 +336,7 @@ function Test-AppInstalled($app) {
 
 
 # =============================================================================
-#  Finishing touches  (startMenuShortcut, startAtLogon, afterInstall)
+#  Finishing touches  (shortcut, startAtLogon, afterInstall)
 # =============================================================================
 # These run on every setup run once the app is installed, so each is safe to repeat
 # (and a deleted shortcut or task comes back).
@@ -332,7 +347,7 @@ function Get-AppExe($app) {
     $exe
 }
 
-# startMenuShortcut: C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<name>.lnk
+# shortcut: C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<name>.lnk
 function Add-StartMenuShortcut($app) {
     $exe = Get-AppExe $app
     $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $StartMenu "$($app.name).lnk"))
@@ -343,17 +358,17 @@ function Add-StartMenuShortcut($app) {
     Write-Info "Start Menu shortcut: $($app.name).lnk"
 }
 
-# startAtLogon: a scheduled task "<name> at logon" that starts exe with args when you log
-# on, as admin without a UAC prompt if admin is true. "Start in" is exe's folder.
+# startAtLogon: a scheduled task "<name> at logon" that starts exe with startArgs when
+# you log on; as admin without a UAC prompt if startAsAdmin. "Start in" is exe's folder.
 function Register-LogonTask($app) {
     $exe = Get-AppExe $app
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
     $taskName = "$($app.name) at logon"
     $actionArgs = @{ Execute = $exe; WorkingDirectory = (Split-Path $exe) }
-    if ($app.startAtLogon.args) { $actionArgs.Argument = $app.startAtLogon.args }
+    if ($app.startArgs) { $actionArgs.Argument = $app.startArgs }
     $action    = New-ScheduledTaskAction @actionArgs
     $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
-    $runLevel  = if ($app.startAtLogon.admin) { 'Highest' } else { 'Limited' }
+    $runLevel  = if ($app.startAsAdmin) { 'Highest' } else { 'Limited' }
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel $runLevel
     $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
@@ -374,15 +389,17 @@ function Invoke-AfterInstall($app, $command) {
 #  Configs
 # =============================================================================
 
-# Copies one backed-up config from configs\ to its place on this PC. Closes the listed
-# processes first, and keeps whatever was there as <name>.bak.
+# configs: "path inside configs\": "path on this PC". Returns the ones backed up so far.
+function Get-AppConfigs($app) {
+    if (-not $app.configs) { return @() }
+    @($app.configs.PSObject.Properties | Where-Object { Test-Path (Join-Path $ConfigsDir $_.Name) } |
+        ForEach-Object { [pscustomobject]@{ Repo = $_.Name; Target = $_.Value } })
+}
+
+# Copies one backed-up config to its place on this PC, keeping whatever was there as .bak.
 function Restore-Config($config) {
-    $from = Join-Path $ConfigsDir $config.repo
-    $to = Expand-Path $config.target
-    foreach ($process in @($config.closeFirst)) {
-        if ($process) { Get-Process -Name $process -ErrorAction SilentlyContinue | Stop-Process -Force }
-    }
-    Start-Sleep -Milliseconds 500
+    $from = Join-Path $ConfigsDir $config.Repo
+    $to = Expand-Path $config.Target
     if (Test-Path $to) {
         if (Test-Path "$to.bak") { Remove-Item "$to.bak" -Recurse -Force }
         Copy-Item $to "$to.bak" -Recurse -Force
@@ -394,7 +411,7 @@ function Restore-Config($config) {
         New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
         Copy-Item $from $to -Force
     }
-    Write-Info "Restored $($config.repo)"
+    Write-Info "Restored $($config.Repo)"
 }
 
 
@@ -416,10 +433,10 @@ function Install-App($app) {
         return $true
     }
 
-    if ($app.type -eq 'command') {
-        if ($DryRun) { Add-Result $app 'install' 'DryRun' 'would run install.command'; return $false }
+    if ($app.command) {
+        if ($DryRun) { Add-Result $app 'install' 'DryRun' 'would run command'; return $false }
         Invoke-InstallCommand $app
-        if ($app.install.runAsUser) {
+        if ($app.runAsUser) {
             Write-Problem "$($app.name) opened in its own window; it finishes on its own."
             Add-Result $app 'install' 'OK' 'started in its own window'
             return $false   # still running, so configs and finishing touches would be too early
@@ -428,7 +445,7 @@ function Install-App($app) {
         return $true
     }
 
-    $download = Resolve-Source $app.source
+    $download = Resolve-Source $app
     Write-Info "Source: $($download.Url)"
     if ($DryRun) {
         $size = ''
@@ -442,8 +459,8 @@ function Install-App($app) {
     }
 
     $file = Save-Download $download.Url $download.FileName $download.Sha256
-    if ($app.install.signer) { Assert-Signature $file $app.install.signer }
-    if ($app.type -eq 'portable') { Install-Portable $app $file } else { Install-Package $app $file }
+    if ($app.signer)   { Assert-Signature $file $app.signer }
+    if ($app.portable) { Install-Portable $app $file } else { Install-Package $app $file }
     Write-Info 'Installed'
     Add-Result $app 'install' 'OK' $download.FileName
     return $true
@@ -469,15 +486,17 @@ function Invoke-App($app) {
     }
 
     # 2. Restore configs (the ones that have been backed up into configs\)
-    $configs = @($app.configs | Where-Object { $_ -and (Test-Path (Join-Path $ConfigsDir $_.repo)) })
+    $configs = @(Get-AppConfigs $app)   # @() keeps a single config as a list
     if ($configs -and -not $SkipConfigs) {
         if ($DryRun) {
             Add-Result $app 'configs' 'DryRun' "would restore $($configs.Count) item(s)"
         } else {
+            foreach ($process in $app.close) { Get-Process -Name $process -ErrorAction SilentlyContinue | Stop-Process -Force }
+            Start-Sleep -Milliseconds 500
             $errors = @()
             foreach ($config in $configs) {
                 try { Restore-Config $config }
-                catch { Write-Problem "FAILED: $($config.repo): $($_.Exception.Message)"; $errors += "$($config.repo): $($_.Exception.Message)" }
+                catch { Write-Problem "FAILED: $($config.Repo): $($_.Exception.Message)"; $errors += "$($config.Repo): $($_.Exception.Message)" }
             }
             if ($errors) { Add-Result $app 'configs' 'FAILED' ($errors -join '; ') }
             else         { Add-Result $app 'configs' 'OK' "$($configs.Count) restored" }
@@ -486,9 +505,9 @@ function Invoke-App($app) {
 
     # 3. Finishing touches
     if ($ConfigsOnly -or -not $installed) { return }
-    if ($app.startMenuShortcut)    { Invoke-Step $app 'startMenuShortcut' { Add-StartMenuShortcut $app } }
-    if ($app.startAtLogon.enabled) { Invoke-Step $app 'startAtLogon' { Register-LogonTask $app } }
-    foreach ($command in @($app.afterInstall | Where-Object { $_ })) {
+    if ($app.shortcut)     { Invoke-Step $app 'shortcut' { Add-StartMenuShortcut $app } }
+    if ($app.startAtLogon) { Invoke-Step $app 'startAtLogon' { Register-LogonTask $app } }
+    foreach ($command in $app.afterInstall) {
         Invoke-Step $app 'afterInstall' { Invoke-AfterInstall $app $command }
     }
 }
@@ -499,8 +518,8 @@ function Invoke-App($app) {
 # =============================================================================
 
 if (-not (Test-Path -LiteralPath $AppsFile -PathType Leaf)) { throw "Can't find $AppsFile" }
-$allApps = @(([IO.File]::ReadAllText($AppsFile) | ConvertFrom-Json).apps)
-$problems = @($allApps | ForEach-Object { Test-AppEntry $_ })
+$entries = @(([IO.File]::ReadAllText($AppsFile) | ConvertFrom-Json).apps)
+$problems = @($entries | ForEach-Object { Test-AppEntry $_ })
 if ($problems) {
     Write-Host 'apps.json has problems; nothing was changed:' -ForegroundColor Red
     $problems | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
@@ -508,9 +527,9 @@ if ($problems) {
     return
 }
 
-$apps = @($allApps | Where-Object {
+$apps = @($entries | ForEach-Object { Complete-App $_ } | Where-Object {
     (-not $Only -or $Only -contains $_.name) -and -not ($Skip -contains $_.name) -and
-    (-not $ConfigsOnly -or @($_.configs).Count)
+    (-not $ConfigsOnly -or $_.configs)
 })
 
 $number = 0
@@ -540,7 +559,7 @@ if ($DryRun) {
 } else {
     Write-Host 'All done. A restart is recommended.' -ForegroundColor Green
     $note = ''
-    if ($ownWindow) { $note = "`n`n$($ownWindow -join ', ') finish(es) in its own window if still open." }
+    if ($ownWindow) { $note = "`n`nStill finishing in their own window: $($ownWindow -join ', ')." }
     Show-FinalMessage -Title 'pc-setup: all done' -Message (
         "Everything completed successfully.`n`n$done step(s) done and $skipped app(s) already installed.$note`n`nA restart is recommended.")
 }

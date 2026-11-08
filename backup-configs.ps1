@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Run this on the CURRENT install, before wiping. It copies every app's config files
-    (the "configs" entries in apps.json) from this PC into the configs\ folder, so you
+    (the "configs" of each app in apps.json) from this PC into the configs\ folder, so you
     can commit and push them. No admin needed.
 
 .EXAMPLE
@@ -26,23 +26,25 @@ $apps = ([IO.File]::ReadAllText($appsFile) | ConvertFrom-Json).apps
 
 $saved = 0; $notFound = @(); $failed = @()
 foreach ($app in $apps) {
-    foreach ($config in @($app.configs | Where-Object { $_ })) {
-        $from = [Environment]::ExpandEnvironmentVariables($config.target)
-        $to   = Join-Path $configsDir $config.repo
+    if (-not $app.configs) { continue }
+
+    # The app must be closed, or its files may be half-written or locked.
+    $running = @($app.close | Where-Object { $_ } | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue })
+    if ($running) {
+        Write-Host "Close $($app.name) first (running: $(($running.Name | Sort-Object -Unique) -join ', ')), then press Enter." -ForegroundColor Yellow
+        [void](Read-Host)
+    }
+
+    # configs: "path inside configs\": "path on this PC"
+    foreach ($config in $app.configs.PSObject.Properties) {
+        $from = [Environment]::ExpandEnvironmentVariables($config.Value)
+        $to   = Join-Path $configsDir $config.Name
 
         if (-not (Test-Path $from)) {
             Write-Host "skip   $($app.name): $from not found" -ForegroundColor Yellow
             $notFound += "  - $($app.name): $(Split-Path $from -Leaf)"
             continue
         }
-
-        # The app must be closed, or its files may be half-written or locked.
-        $running = @($config.closeFirst | Where-Object { $_ } | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue })
-        if ($running) {
-            Write-Host "Close $($app.name) first (running: $(($running.Name | Sort-Object -Unique) -join ', ')), then press Enter." -ForegroundColor Yellow
-            [void](Read-Host)
-        }
-
         try {
             if (Test-Path $to) { Remove-Item $to -Recurse -Force }
             New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null

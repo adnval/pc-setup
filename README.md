@@ -61,45 +61,46 @@ Installed in this order (7-Zip first, because it unpacks the .7z downloads).
 
 ## apps.json
 
-Every app has the same fields. Leave a field empty (`""`, `false`, `[]`) when it doesn't
-apply. In JSON, write each `\` as `\\`.
+Each app lists only the fields it needs; everything else uses the default. In JSON,
+write each `\` as `\\`.
 
 ```json
 {
   "name": "OBS",
-  "type": "installer",
-  "source": { "from": "github", "location": "obsproject/obs-studio", "file": "Windows-x64-Installer\\.exe$" },
-  "install": { "args": "/S", "hidden": false, "signer": "", "command": "", "runAsUser": false },
-  "exe": "%ProgramFiles%\\obs-studio\\bin\\64bit\\obs64.exe",
+  "source": "github:obsproject/obs-studio",
+  "file": "Windows-x64-Installer\\.exe$",
+  "args": "/S",
   "detect": "^OBS Studio",
-  "startMenuShortcut": false,
-  "startAtLogon": { "enabled": true, "args": "--startreplaybuffer --minimize-to-tray", "admin": true },
-  "afterInstall": [],
-  "configs": [
-    { "repo": "obs-studio/basic", "target": "%APPDATA%\\obs-studio\\basic", "closeFirst": ["obs64"] }
-  ]
+  "exe": "%ProgramFiles%\\obs-studio\\bin\\64bit\\obs64.exe",
+  "startAtLogon": true,
+  "startArgs": "--startreplaybuffer --minimize-to-tray",
+  "startAsAdmin": true,
+  "close": ["obs64"],
+  "configs": {
+    "obs-studio/basic": "%APPDATA%\\obs-studio\\basic"
+  }
 }
 ```
 
-| Field | Meaning |
-|---|---|
-| `name` | Used with `-Only` / `-Skip` and for shortcut and task names |
-| `type` | `installer` runs the download (`.exe`, `.msi`, or the `.msi` in a `.zip`). `portable` unpacks the `.zip`/`.7z` into the folder of `exe`. `command` runs `install.command` instead of downloading. |
-| `source.from` | `github` (latest release), `sourceforge` (newest file), or `url` (a direct link) |
-| `source.location` | `owner/repo`, `project/folder`, or the URL |
-| `source.file` | Regex for the file name to pick (`github`, `sourceforge`), or the name to save as (`url`) |
-| `install.args` | Silent-install arguments. `{configs}` becomes the path of the `configs` folder. |
-| `install.hidden` | Hide the installer's or command's window |
-| `install.signer` | Regex; only run the download if it's validly signed by a matching publisher |
-| `install.command` | PowerShell command for `type: command` |
-| `install.runAsUser` | Run the command as the normal user in its own window instead of as admin |
-| `exe` | The app's main program (`%VARS%` allowed). Needed for portable apps, shortcuts, start at logon and `afterInstall`. |
-| `detect` | Regex on the app's name in Settings → Apps, to tell whether it's installed. If empty, setup checks whether `exe` exists. |
-| `startMenuShortcut` | Add a Start Menu shortcut to `exe` |
-| `startAtLogon` | `enabled`: create the scheduled task "*name* at logon" that starts `exe` with `args` at logon. `admin`: run it as admin without a UAC prompt. |
-| `afterInstall` | Commands run (hidden, in `exe`'s folder) after the app is installed |
-| `configs` | Files to restore: `repo` (path inside `configs\`), `target` (where it goes on the PC), `closeFirst` (processes to close first). `backup-configs.ps1` copies them the other way. |
+| Field | Default | Meaning |
+|---|---|---|
+| `name` | required | Used with `-Only` / `-Skip`, and to name the shortcut and logon task |
+| `source` | required* | `github:owner/repo` (latest release), `sourceforge:project/folder` (newest file), or a direct `https://` link |
+| `file` | required* | Regex for the file to pick, or the name to save a direct link as |
+| `args` | `""` | Install arguments. `{configs}` is replaced with the path of the `configs` folder. |
+| `signer` | `""` | Only run the download if it's signed by a publisher matching this regex |
+| `hidden` | `false` | Hide the installer's window |
+| `command` | `""` | PowerShell command to run instead of downloading (*replaces `source` and `file`) |
+| `runAsUser` | `false` | Run `command` as the normal user, in its own window |
+| `portable` | `false` | Unpack the .zip/.7z into the folder of `exe` instead of running an installer |
+| `exe` | `""` | The app's main program. Needed by `portable`, `shortcut`, `startAtLogon` and `afterInstall`. |
+| `detect` | `""` | Regex on the app's name in Settings → Apps, to tell whether it's installed. If empty, setup checks whether `exe` exists. |
+| `shortcut` | `false` | Add a Start Menu shortcut to `exe` |
+| `startAtLogon` | `false` | Start `exe` at logon (scheduled task "*name* at logon") |
+| `startArgs` | `""` | Arguments for `startAtLogon` |
+| `startAsAdmin` | `false` | Run `startAtLogon` as admin, without a UAC prompt |
+| `afterInstall` | `[]` | Commands to run in `exe`'s folder after installing |
+| `close` | `[]` | Processes to close before configs are backed up or restored |
+| `configs` | none | `"path inside configs\\": "path on this PC"` pairs, restored by setup and saved by `backup-configs.ps1` |
 
-Shortcuts, start at logon and `afterInstall` run on every setup run, so they're kept
-up to date. Setup checks `apps.json` before changing anything and names any field it
-can't use.
+Setup checks `apps.json` before changing anything and reports unknown or missing fields.
