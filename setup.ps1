@@ -218,7 +218,7 @@ function Get-SourceForgeFile($location, $pattern) {
     $name = $rss.rss.channel.item |
         ForEach-Object { $_.SelectSingleNode('title').InnerText.Trim().Split('/')[-1] } |
         Where-Object { $_ -match $pattern } |
-        Sort-Object { [int]($_ -replace '\D', '') } -Descending |
+        Sort-Object { [long]($_ -replace '\D', '') } -Descending |
         Select-Object -First 1
     if (-not $name) { throw "No file matching '$pattern' in SourceForge $location" }
     @{ Url = "https://downloads.sourceforge.net/project/$project/$folder/$name"; FileName = $name }
@@ -249,7 +249,8 @@ function Save-Download($url, $fileName, $sha256, $signer) {
     $client.Timeout = [TimeSpan]::FromMinutes(30)
     [void]$client.DefaultRequestHeaders.UserAgent.TryParseAdd($UserAgent)
     try {
-        $response = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        try { $response = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult() }
+        catch { throw "download failed: $($_.Exception.InnerException.Message) ($url)" }   # site unreachable, no internet, ...
         if (-not $response.IsSuccessStatusCode) { throw "download failed: HTTP $([int]$response.StatusCode) $($response.ReasonPhrase) ($url)" }
         $total      = $response.Content.Headers.ContentLength
         $webStream  = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
@@ -272,8 +273,11 @@ function Save-Download($url, $fileName, $sha256, $signer) {
                     }
                 }
             }
+        } catch [System.Management.Automation.MethodInvocationException] {
+            throw "download interrupted: $($_.Exception.InnerException.Message) ($url)"   # connection dropped mid-file
         } finally { $fileStream.Dispose(); $webStream.Dispose() }
     } finally { $client.Dispose() }
+    if ($total -and $done -ne $total) { throw "download incomplete: got $done of $total bytes ($url)" }
 
     $details = @(('{0:N1} MB' -f ($done / 1MB)), (Format-Elapsed $timer.Elapsed))
     try {
@@ -670,12 +674,15 @@ if (-not (Test-Path -LiteralPath $AppsFile -PathType Leaf)) {
 }
 $entries = @(([IO.File]::ReadAllText($AppsFile) | ConvertFrom-Json).apps)
 
+$names = @($entries | ForEach-Object name)
 $problems = @($entries | ForEach-Object { Test-AppEntry $_ })
+$problems += @($names | Group-Object | Where-Object Count -gt 1 | ForEach-Object { "$($_.Name): name is used more than once" })
+$problems += @(@($Only) + @($Skip) | Where-Object { $_ -notin $names } | ForEach-Object { "-Only/-Skip: no app named '$_' (names: $($names -join ', '))" })
 if ($problems) {
-    Write-Host 'apps.json has problems; nothing was changed:' -ForegroundColor Red
+    Write-Host 'Nothing was changed. Fix these first:' -ForegroundColor Red
     $problems | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
-    Show-FinalMessage -Warning -Title 'pc-setup: apps.json has problems' -Message (
-        "Nothing was changed. Fix these in apps.json:`n`n" + ($problems -join "`n"))
+    Show-FinalMessage -Warning -Title 'pc-setup: nothing was changed' -Message (
+        "Nothing was changed. Fix these first:`n`n" + ($problems -join "`n"))
     return
 }
 

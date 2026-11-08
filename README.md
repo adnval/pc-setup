@@ -6,15 +6,15 @@ logon). Everything it does is listed in `apps.json`.
 
 ## Usage
 
-**Before wiping**, back up configs. Download this repo (Code → Download ZIP), close OBS
-and LosslessCut, and in PowerShell inside the extracted folder run:
+**Before wiping**, back up configs. Download this repo (Code → Download ZIP) and in
+PowerShell inside the extracted folder run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\backup-configs.ps1
 ```
 
-Then delete any `service.json` under `configs\obs-studio\basic\profiles\` (it holds your
-stream key) and upload the `configs` folder to this repo.
+It waits for you to close any app whose configs it copies, and lists any `service.json`
+(OBS's stream key) to delete. Then upload the `configs` folder to this repo.
 
 **After wiping**, run this in PowerShell:
 
