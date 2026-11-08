@@ -37,7 +37,10 @@ Open **PowerShell** (no admin needed; it asks for admin itself) and run:
 irm https://raw.githubusercontent.com/adnval/pc-setup/main/bootstrap.ps1 | iex
 ```
 
-A new admin window installs everything and prints a summary table. If something
+If that PowerShell is already running **as admin**, setup runs right there in the same
+window. Otherwise you get a UAC prompt and setup runs in a new admin window (Windows can't
+switch an open window to admin). Either way, setup installs everything and prints a
+summary table. If something
 fails, run it again: programs that are already installed are skipped.
 
 While it runs, a bar at the top shows overall progress (`Installing apps: 5 of 14`),
