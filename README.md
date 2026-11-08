@@ -38,9 +38,12 @@ From `$env:TEMP\pc-setup\pc-setup-main`, after `Set-ExecutionPolicy -Scope Proce
 | `.\setup.ps1 -Force` | Reinstall apps that are already installed |
 | `.\setup.ps1 -Backup` | Copy configs from this PC into `configs\` (what `backup-configs.ps1` runs) |
 
+`-Only` and `-Skip` also work with `backup-configs.ps1`, e.g. `.\backup-configs.ps1 -Only OBS`.
+
 ## Apps
 
-Installed in this order (7-Zip first, because it unpacks the .7z downloads).
+Installed in this order (7-Zip first, because it unpacks the .7z downloads). Downloads from
+GitHub are checked against the SHA256 that GitHub publishes.
 
 | Name | App | Source | Extras |
 |---|---|---|---|
@@ -86,7 +89,7 @@ write each `\` as `\\`.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `name` | required | Used with `-Only` / `-Skip`, and to name the shortcut and logon task |
+| `name` | required | Unique. Used with `-Only` / `-Skip`, and to name the shortcut and logon task |
 | `source` | required* | `github:owner/repo` (latest release), `sourceforge:project/folder` (newest file), or a direct `https://` link |
 | `file` | required* | Regex for the file to pick, or the name to save a direct link as |
 | `args` | `""` | Install arguments. `{configs}` is replaced with the path of the `configs` folder. |
@@ -105,4 +108,5 @@ write each `\` as `\\`.
 | `close` | `[]` | Processes to close before configs are backed up or restored |
 | `configs` | none | `"path inside configs\\": "path on this PC"` pairs, restored by setup and saved by `backup-configs.ps1` |
 
-Setup checks `apps.json` before changing anything and reports unknown or missing fields.
+Before changing anything, setup checks `apps.json` and the `-Only` / `-Skip` names, and reports
+unknown or missing fields, duplicate names and names that don't match an app.
