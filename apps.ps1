@@ -70,7 +70,7 @@ iex "& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/ref
     # The installer must carry a valid signature from HWiNFO's developer (REALiX / Martin Malik).
     @{ Name = 'HWiNFO'; Detect = '^HWiNFO'; Type = 'script'
        Run = {
-           [xml]$rss = (Invoke-WebRequest -UseBasicParsing -UserAgent $script:UA -Uri 'https://sourceforge.net/projects/hwinfo/rss?path=/Windows_Installer').Content
+           [xml]$rss = (Invoke-WebRequest -UseBasicParsing -UserAgent $global:PcSetupUA -Uri 'https://sourceforge.net/projects/hwinfo/rss?path=/Windows_Installer').Content
            $name = $rss.rss.channel.item | ForEach-Object { $_.SelectSingleNode('title').InnerText.Trim().Split('/')[-1] } |
                Where-Object { $_ -match '^hwi64_\d+\.exe$' } |
                Sort-Object { [int]($_ -replace '\D', '') } -Descending | Select-Object -First 1

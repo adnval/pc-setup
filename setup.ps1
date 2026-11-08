@@ -50,7 +50,7 @@ function Invoke-AppExtras($app) {
     if ($app.Type -eq 'portable') { Install-PortableShortcut -Name $app.Name -Exe $app.Exe }
     if ($app.PostInstall) {
         Write-Ok 'Post-install:'
-        & $app.PostInstall (Join-Path $script:ToolsDir $app.Name) ([bool]$Force)
+        & $app.PostInstall (Join-Path $global:PcSetupToolsDir $app.Name) ([bool]$Force)
     }
 }
 
@@ -102,14 +102,14 @@ if (-not $ConfigsOnly) {
                 'exe'    { Invoke-Installer -Path $file -Arguments $app.Args }
                 'msi'    { Invoke-Installer -Path $file }
                 'zipmsi' {
-                    $dir = Join-Path $script:Downloads ($app.Name + '_msi')
+                    $dir = Join-Path $global:PcSetupDownloads ($app.Name + '_msi')
                     Expand-Archive -Path $file -DestinationPath $dir -Force
                     $msi = Get-ChildItem $dir -Recurse -Filter *.msi | Select-Object -First 1
                     if (-not $msi) { throw 'No .msi found inside the zip' }
                     Invoke-Installer -Path $msi.FullName
                 }
                 'portable' {
-                    Write-Ok "Extracting to $(Join-Path $script:ToolsDir $app.Name)"
+                    Write-Ok "Extracting to $(Join-Path $global:PcSetupToolsDir $app.Name)"
                     $null = Expand-ToTools -Archive $file -Name $app.Name
                 }
                 default  { throw "Unknown type $($app.Type)" }
@@ -173,12 +173,12 @@ if (-not $SkipConfigs -and -not $DryRun) {
 if ((-not $Only -or $Only -contains 'OBS') -and -not ($Skip -and $Skip -contains 'OBS')) {
     Write-Step 'OBS autostart (scheduled task)'
     if ($DryRun) {
-        Add-Result 'OBS autostart' 'DryRun' "would create task '$script:ObsTaskName'"
+        Add-Result 'OBS autostart' 'DryRun' "would create task '$global:PcSetupObsTask'"
     } else {
         try {
             $taskUser = Register-ObsLogonTask
-            Write-Ok "Task '$script:ObsTaskName' starts OBS at logon for $taskUser"
-            Add-Result 'OBS autostart' 'OK' $script:ObsTaskName
+            Write-Ok "Task '$global:PcSetupObsTask' starts OBS at logon for $taskUser"
+            Add-Result 'OBS autostart' 'OK' $global:PcSetupObsTask
         } catch {
             Write-Warn2 "FAILED: $($_.Exception.Message)"
             Add-Result 'OBS autostart' 'FAILED' $_.Exception.Message

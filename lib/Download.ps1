@@ -1,8 +1,10 @@
 # Helper functions used by setup.ps1. Windows PowerShell 5.1 compatible.
 
-$script:UA = 'pc-setup-script'
-$script:ToolsDir = $env:ProgramFiles   # portable apps go in C:\Program Files\<Name>
-$script:Downloads = Join-Path $env:TEMP 'pc-setup\downloads'
+# Shared settings are global so the functions below work no matter which script calls
+# them (a separate script like office\install-office.ps1 has its own $script: scope).
+$global:PcSetupUA = 'pc-setup-script'
+$global:PcSetupToolsDir = $env:ProgramFiles   # portable apps go in C:\Program Files\<Name>
+$global:PcSetupDownloads = Join-Path $env:TEMP 'pc-setup\downloads'
 
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-Ok($msg)   { Write-Host "    $msg" -ForegroundColor Green }
@@ -14,7 +16,7 @@ function Write-Warn2($msg){ Write-Host "    $msg" -ForegroundColor Yellow }
 # Returns @{ Url; Name; Sha256 } (Sha256 is $null if GitHub has no digest).
 function Get-GitHubAsset {
     param([string]$Repo, [string]$Pattern, [string]$Exclude)
-    $rel = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = $script:UA } `
+    $rel = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = $global:PcSetupUA } `
         -Uri "https://api.github.com/repos/$Repo/releases/latest"
     $asset = $rel.assets | Where-Object {
         $_.name -match $Pattern -and (-not $Exclude -or $_.name -notmatch $Exclude)
@@ -28,7 +30,7 @@ function Get-GitHubAsset {
 # First link on a web page whose href matches a regex (relative links are made absolute).
 function Get-LinkFromPage {
     param([string]$Page, [string]$Pattern)
-    $html = (Invoke-WebRequest -UseBasicParsing -UserAgent $script:UA -Uri $Page).Content
+    $html = (Invoke-WebRequest -UseBasicParsing -UserAgent $global:PcSetupUA -Uri $Page).Content
     $m = [regex]::Match($html, $Pattern)
     if (-not $m.Success) { throw "No link matching '$Pattern' on $Page" }
     $link = $m.Value
@@ -67,13 +69,13 @@ function Show-OverallProgress {
 # Downloads with a live "63%  95.9 / 152.4 MB  24.1 MB/s" line, updated twice a second.
 function Save-Download {
     param([string]$Url, [string]$FileName, [string]$Sha256)
-    New-Item -ItemType Directory -Force -Path $script:Downloads | Out-Null
-    $out = Join-Path $script:Downloads $FileName
+    New-Item -ItemType Directory -Force -Path $global:PcSetupDownloads | Out-Null
+    $out = Join-Path $global:PcSetupDownloads $FileName
 
     Add-Type -AssemblyName System.Net.Http
     $client = New-Object System.Net.Http.HttpClient
     $client.Timeout = [TimeSpan]::FromMinutes(30)
-    [void]$client.DefaultRequestHeaders.UserAgent.TryParseAdd($script:UA)
+    [void]$client.DefaultRequestHeaders.UserAgent.TryParseAdd($global:PcSetupUA)
     try {
         $resp = $client.GetAsync($Url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
         if (-not $resp.IsSuccessStatusCode) { throw "Download failed: HTTP $([int]$resp.StatusCode) $($resp.ReasonPhrase)" }
@@ -142,7 +144,7 @@ function Invoke-Installer {
 # Extracts .zip (built in) or .7z (needs 7-Zip) into C:\Program Files\<Name>.
 function Expand-ToTools {
     param([string]$Archive, [string]$Name)
-    $dest = Join-Path $script:ToolsDir $Name
+    $dest = Join-Path $global:PcSetupToolsDir $Name
     if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
     if ($Archive -like '*.zip') {
@@ -166,7 +168,7 @@ function Expand-ToTools {
 # for a portable app in C:\Program Files\<Name>. Start in = the app folder.
 function Install-PortableShortcut {
     param([string]$Name, [string]$Exe)
-    $dir = Join-Path $script:ToolsDir $Name
+    $dir = Join-Path $global:PcSetupToolsDir $Name
     $target = Join-Path $dir $Exe
     if (-not (Test-Path -LiteralPath $target)) { throw "$Exe not found in $dir" }
     $lnkPath = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\$Name.lnk"
@@ -230,7 +232,7 @@ function Show-FinalMessage {
 
 # --- OBS autostart --------------------------------------------------------------
 
-$script:ObsTaskName = 'OBS Studio (replay buffer)'
+$global:PcSetupObsTask = 'OBS Studio (replay buffer)'
 
 function Get-CurrentUserName { [Security.Principal.WindowsIdentity]::GetCurrent().Name }
 
@@ -249,7 +251,7 @@ function Register-ObsLogonTask {
     $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 
-    Register-ScheduledTask -TaskName $script:ObsTaskName -Action $action -Trigger $trigger `
+    Register-ScheduledTask -TaskName $global:PcSetupObsTask -Action $action -Trigger $trigger `
         -Principal $principal -Settings $settings -Force `
         -Description 'Starts OBS at logon, minimized to the tray, with the replay buffer running. Created by pc-setup.' | Out-Null
     $user
