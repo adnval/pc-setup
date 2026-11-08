@@ -43,6 +43,17 @@ if (-not $isAdmin -and -not $DryRun) {
 
 $results = @()
 
+# Start Menu shortcut (portable apps) and the app's PostInstall step, if any.
+# Runs after an install, and for portable apps also when they were already installed,
+# so a missing shortcut or file registration gets repaired on a re-run.
+function Invoke-AppExtras($app) {
+    if ($app.Type -eq 'portable') { Install-PortableShortcut -Name $app.Name -Exe $app.Exe }
+    if ($app.PostInstall) {
+        Write-Ok 'Post-install:'
+        & $app.PostInstall (Join-Path $script:ToolsDir $app.Name) ([bool]$Force)
+    }
+}
+
 function Add-Result($name, $status, $detail) {
     $script:results += [pscustomobject]@{ App = $name; Result = $status; Detail = $detail }
 }
@@ -59,7 +70,12 @@ if (-not $ConfigsOnly) {
         Write-Step "[$i/$($selected.Count)] $($app.Name)"
         try {
             $installed = if ($app.Detect -match '^[A-Za-z]:\\') { Test-Path $app.Detect } else { Test-Installed $app.Detect }
-            if ($installed -and -not $Force) { Write-Ok 'Already installed, skipping'; Add-Result $app.Name 'Skipped' 'already installed'; continue }
+            if ($installed -and -not $Force) {
+                Write-Ok 'Already installed, skipping'
+                if ($app.Type -eq 'portable' -and -not $DryRun) { Invoke-AppExtras $app }
+                Add-Result $app.Name 'Skipped' 'already installed'
+                continue
+            }
 
             if ($app.Type -eq 'script') {
                 if ($DryRun) { Add-Result $app.Name 'DryRun' 'runs its own install script'; continue }
@@ -94,11 +110,11 @@ if (-not $ConfigsOnly) {
                 }
                 'portable' {
                     Write-Ok "Extracting to $(Join-Path $script:ToolsDir $app.Name)"
-                    $dest = Expand-ToTools -Archive $file -Name $app.Name
-                    New-StartMenuShortcut -Name $app.Name -Target (Join-Path $dest $app.Exe)
+                    $null = Expand-ToTools -Archive $file -Name $app.Name
                 }
                 default  { throw "Unknown type $($app.Type)" }
             }
+            Invoke-AppExtras $app
             Write-Ok 'Installed'
             Add-Result $app.Name 'OK' $src.Name
         } catch {

@@ -122,13 +122,14 @@ function Save-Download {
 # Waits for the installer process itself, so an app it launches when finished
 # (e.g. Discord opening) does not hold up the script.
 function Invoke-Installer {
-    param([string]$Path, [string]$Arguments)
+    param([string]$Path, [string]$Arguments, [switch]$Hidden)
+    $style = if ($Hidden) { 'Hidden' } else { 'Normal' }
     if ($Path -like '*.msi') {
         $p = Start-Process msiexec.exe -ArgumentList "/i `"$Path`" /qn /norestart" -PassThru
     } elseif ($Arguments) {
-        $p = Start-Process $Path -ArgumentList $Arguments -PassThru
+        $p = Start-Process $Path -ArgumentList $Arguments -WindowStyle $style -PassThru
     } else {
-        $p = Start-Process $Path -PassThru
+        $p = Start-Process $Path -WindowStyle $style -PassThru
     }
     $null = $p.Handle   # keeps the exit code readable after the process ends (PowerShell 5.1 quirk)
     $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -161,14 +162,21 @@ function Expand-ToTools {
     $dest
 }
 
-function New-StartMenuShortcut {
-    param([string]$Name, [string]$Target)
-    $dir = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
+# Creates (or repairs) C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<Name>.lnk
+# for a portable app in C:\Program Files\<Name>. Start in = the app folder.
+function Install-PortableShortcut {
+    param([string]$Name, [string]$Exe)
+    $dir = Join-Path $script:ToolsDir $Name
+    $target = Join-Path $dir $Exe
+    if (-not (Test-Path -LiteralPath $target)) { throw "$Exe not found in $dir" }
+    $lnkPath = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\$Name.lnk"
     $ws = New-Object -ComObject WScript.Shell
-    $lnk = $ws.CreateShortcut((Join-Path $dir "$Name.lnk"))
-    $lnk.TargetPath = $Target
-    $lnk.WorkingDirectory = Split-Path $Target
+    $lnk = $ws.CreateShortcut($lnkPath)
+    $lnk.TargetPath = $target
+    $lnk.WorkingDirectory = $dir
+    $lnk.IconLocation = "$target,0"
     $lnk.Save()
+    Write-Ok "Shortcut: Start Menu\$Name.lnk"
 }
 
 # True if an entry in Add/Remove Programs has a DisplayName matching the regex.

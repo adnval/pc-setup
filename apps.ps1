@@ -8,6 +8,8 @@
 #   Args      silent-install arguments for Type = exe
 #   Exe       for portable: the program inside the folder to make a Start Menu shortcut for
 #   Run       for Type = script: scriptblock that does the whole install
+#   PostInstall  optional scriptblock run after installing (and, for portable apps, also
+#             when already installed). Gets the app folder and whether -Force was used.
 
 $Apps = @(
     # 7-Zip goes first: LosslessCut and mpv are .7z archives.
@@ -42,7 +44,21 @@ iex "& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/ref
 
     # v3 build needs a CPU from roughly 2015 or later (AVX2). Use the plain build on older CPUs.
     @{ Name = 'mpv'; Detect = "$env:ProgramFiles\mpv\mpv.exe"; Type = 'portable'; Exe = 'mpv.exe'
-       Resolve = { Get-GitHubAsset 'shinchiro/mpv-winbuild-cmake' '^mpv-x86_64-v3-\d+-git-.*\.7z$' } }
+       Resolve = { Get-GitHubAsset 'shinchiro/mpv-winbuild-cmake' '^mpv-x86_64-v3-\d+-git-.*\.7z$' }
+       # Registers mpv's file types, "Open with" entries and Default Apps entry using the
+       # build's own installer\mpv-install.bat (/u = unattended: no pause, no Control Panel).
+       # Skipped if mpv is already registered at this path, unless -Force.
+       PostInstall = {
+           param([string]$Dir, [bool]$Force)
+           $bat = Join-Path $Dir 'installer\mpv-install.bat'
+           $exe = Join-Path $Dir 'mpv.exe'
+           if (-not (Test-Path -LiteralPath $bat)) { throw "installer\mpv-install.bat not found in $Dir" }
+           $appPath = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\mpv.exe' -ErrorAction SilentlyContinue).'(default)'
+           $listed  = Get-ItemProperty 'HKLM:\SOFTWARE\RegisteredApplications' -Name 'mpv' -ErrorAction SilentlyContinue
+           if ($appPath -eq $exe -and $listed -and -not $Force) { Write-Ok 'File types already registered'; return }
+           Write-Ok 'Registering file types (installer\mpv-install.bat /u)'
+           Invoke-Installer -Path $env:ComSpec -Arguments ('/c ""' + $bat + '" /u"') -Hidden
+       } }
 
     @{ Name = 'PaintNET'; Detect = '^paint\.net'; Type = 'zipmsi'
        Resolve = { Get-GitHubAsset 'paintdotnet/release' '\.winmsi\.x64\.zip$' } }

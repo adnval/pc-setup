@@ -86,7 +86,15 @@ cd $env:TEMP\pc-setup\pc-setup-main
 | `Office` | Microsoft 365 apps (no Teams/Outlook/OneDrive/OneNote/Access/Publisher) | Office Deployment Tool + `office/Configuration.xml` |
 
 GitHub downloads are checked against the SHA256 GitHub publishes, where there is one.
-Portable apps go in `C:\Program Files\<Name>` and get a Start Menu shortcut.
+Portable apps (LosslessCut, mpv, ZenTimings) go in `C:\Program Files\<Name>`, with a
+Start Menu shortcut in `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<Name>.lnk`.
+Re-running setup recreates a missing shortcut even if the app is already installed.
+
+**mpv file types:** after unpacking, setup runs mpv's own `installer\mpv-install.bat /u`
+(unattended). It registers mpv for video/audio files, "Open with" and Default Apps, and is
+skipped if mpv is already registered at that path (`-Force` re-runs it). Windows doesn't let
+scripts change your *default* apps, so to make mpv the default player, go to
+**Settings → Apps → Default apps → mpv** and pick the file types.
 To change which Office apps are installed, edit `office/Configuration.xml`
 (or make a new one at config.office.com).
 
