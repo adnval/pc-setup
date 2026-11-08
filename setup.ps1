@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
     Sets up this PC from apps.json: installs each app from its official source,
-    restores its config files from configs\, and runs its finishing steps.
+    restores its config files from configs\, and runs its finishing touches
+    (Start Menu shortcut, start at logon, after-install commands).
 
 .EXAMPLE
     .\setup.ps1                     # everything
@@ -32,10 +33,8 @@ $ProgressPreference    = 'SilentlyContinue'   # PowerShell's own download progre
 $AppsFile    = Join-Path $PSScriptRoot 'apps.json'
 $ConfigsDir  = Join-Path $PSScriptRoot 'configs'
 $DownloadDir = Join-Path $env:TEMP 'pc-setup\downloads'
-$PortableDir = $env:ProgramFiles                 # portable apps go in C:\Program Files\<name>
 $StartMenu   = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs'
 $UserAgent   = 'pc-setup-script'
-$ObsTaskName = 'OBS Studio (replay buffer)'
 
 
 # =============================================================================
@@ -102,20 +101,50 @@ function Show-FinalMessage {
     }
 }
 
+# =============================================================================
+#  Reading and checking apps.json
+# =============================================================================
+
+# %ProgramFiles%, %APPDATA% and other environment variables in a path.
+function Expand-Path($path) { [Environment]::ExpandEnvironmentVariables("$path") }
+
+# Every app has the same fields. This catches typos and missing values up front, with a
+# message that names the app and the field, before anything is installed.
+function Test-AppEntry($app) {
+    $problems = @()
+    $needsExe = $app.startMenuShortcut -or $app.startAtLogon.enabled -or @($app.afterInstall).Count
+    if (-not $app.name) { $problems += 'name is empty' }
+    switch ($app.type) {
+        'installer' { }
+        'portable'  { if (-not $app.exe) { $problems += 'exe is required for a portable app (it decides the folder)' } }
+        'command'   { if (-not $app.install.command) { $problems += 'install.command is required for type "command"' } }
+        default     { $problems += "type must be installer, portable or command (not '$($app.type)')" }
+    }
+    if ($app.type -ne 'command') {
+        if ($app.source.from -notin 'github', 'sourceforge', 'url') { $problems += "source.from must be github, sourceforge or url (not '$($app.source.from)')" }
+        if (-not $app.source.location) { $problems += 'source.location is empty' }
+        if (-not $app.source.file)     { $problems += 'source.file is empty' }
+    }
+    if ($needsExe -and -not $app.exe) { $problems += 'exe is required for startMenuShortcut, startAtLogon and afterInstall' }
+    if (-not $app.detect -and -not $app.exe) { $problems += 'set detect or exe, so setup can tell whether it is installed' }
+    $problems | ForEach-Object { "$($app.name): $_" }
+}
+
 
 # =============================================================================
-#  Finding the download  (an app's "source" in apps.json)
+#  Finding the download  (source)
 # =============================================================================
 
 # Returns @{ Url; FileName; Sha256 } (Sha256 only when GitHub publishes one).
 function Resolve-Source($source) {
-    if ($source.github)      { return Get-GitHubAsset $source.github $source.asset }
-    if ($source.sourceforge) { return Get-SourceForgeFile $source.sourceforge $source.folder $source.file }
-    if ($source.url)         { return @{ Url = $source.url; FileName = $source.file } }
-    throw 'Unknown "source" in apps.json (expected github, sourceforge or url)'
+    switch ($source.from) {
+        'github'      { Get-GitHubAsset $source.location $source.file }
+        'sourceforge' { Get-SourceForgeFile $source.location $source.file }
+        'url'         { @{ Url = $source.location; FileName = $source.file } }
+    }
 }
 
-# The latest GitHub release's file whose name matches a regex.
+# The latest GitHub release's file whose name matches a regex. Location: "owner/repo".
 function Get-GitHubAsset($repo, $pattern) {
     $release = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = $UserAgent } `
         -Uri "https://api.github.com/repos/$repo/releases/latest"
@@ -126,22 +155,23 @@ function Get-GitHubAsset($repo, $pattern) {
     @{ Url = $asset.browser_download_url; FileName = $asset.name; Sha256 = $sha256 }
 }
 
-# The newest file (highest number in its name) in a SourceForge project folder.
-function Get-SourceForgeFile($project, $folder, $pattern) {
-    $feed = "https://sourceforge.net/projects/$project/rss?path=/$folder"
-    [xml]$rss = (Invoke-WebRequest -UseBasicParsing -UserAgent $UserAgent -Uri $feed).Content
+# The matching file with the highest number in its name. Location: "project/folder".
+function Get-SourceForgeFile($location, $pattern) {
+    [xml]$rss = (Invoke-WebRequest -UseBasicParsing -UserAgent $UserAgent `
+        -Uri "https://sourceforge.net/projects/$($location -replace '/', '/rss?path=/')").Content
     $name = $rss.rss.channel.item |
         ForEach-Object { $_.SelectSingleNode('title').InnerText.Trim().Split('/')[-1] } |
         Where-Object { $_ -match $pattern } |
         Sort-Object { [int]($_ -replace '\D', '') } -Descending |
         Select-Object -First 1
-    if (-not $name) { throw "No file matching '$pattern' in SourceForge $project/$folder" }
+    if (-not $name) { throw "No file matching '$pattern' in SourceForge $location" }
+    $project, $folder = $location -split '/', 2
     @{ Url = "https://downloads.sourceforge.net/project/$project/$folder/$name"; FileName = $name }
 }
 
 
 # =============================================================================
-#  Downloading and installing
+#  Downloading and installing  (type + install)
 # =============================================================================
 
 # Downloads with a live "63%  95.9 / 152.4 MB  24.1 MB/s" line, then checks the file.
@@ -194,7 +224,7 @@ function Save-Download($url, $fileName, $sha256) {
     $path
 }
 
-# Refuses to continue unless the file has a valid signature whose signer matches the regex.
+# install.signer: refuse to continue unless the file is validly signed by a matching publisher.
 function Assert-Signature($path, $signer) {
     $signature = Get-AuthenticodeSignature $path
     $subject = $signature.SignerCertificate.Subject
@@ -207,24 +237,23 @@ function Assert-Signature($path, $signer) {
 # Starts a program and shows "Installing... 0:45" until it exits. Waits for that process
 # only, so an app the installer opens at the end (like Discord) doesn't hold things up.
 function Invoke-Installer {
-    param([string]$Path, [string]$Arguments, [switch]$Hidden)
+    param([string]$Path, [string]$Arguments, [switch]$Hidden, [string]$WorkingDirectory)
     $start = @{ FilePath = $Path; PassThru = $true; WindowStyle = $(if ($Hidden) { 'Hidden' } else { 'Normal' }) }
     if ($Path -like '*.msi') { $start.FilePath = 'msiexec.exe'; $start.ArgumentList = "/i `"$Path`" /qn /norestart" }
     elseif ($Arguments)      { $start.ArgumentList = $Arguments }
+    if ($WorkingDirectory)   { $start.WorkingDirectory = $WorkingDirectory }
     $process = Start-Process @start
     $null = $process.Handle   # keeps ExitCode readable after the process ends (PowerShell 5.1 quirk)
     $timer = [Diagnostics.Stopwatch]::StartNew()
-    while (-not $process.WaitForExit(1000)) { Write-Status "Installing... $(Format-Elapsed $timer.Elapsed)" }
+    while (-not $process.WaitForExit(1000)) { Write-Status "Running... $(Format-Elapsed $timer.Elapsed)" }
     $process.WaitForExit()
-    Write-Status "Installing... done ($(Format-Elapsed $timer.Elapsed))" -Done
-    if ($process.ExitCode -notin 0, 3010, 1641) { throw "Installer exited with code $($process.ExitCode)" }
+    Write-Status "Running... done ($(Format-Elapsed $timer.Elapsed))" -Done
+    if ($process.ExitCode -notin 0, 3010, 1641) { throw "Exited with code $($process.ExitCode)" }
 }
 
-# An app's "install" in apps.json: run the .exe with its args, an .msi silently,
-# or the .msi inside a .zip. {configs} in args becomes this repo's configs folder.
+# type "installer": run the .exe with install.args, an .msi silently, or the .msi inside
+# a .zip. {configs} in install.args becomes this repo's configs folder.
 function Install-Package($app, $path) {
-    $options = $app.install
-    if ($options.signer) { Assert-Signature $path $options.signer }
     if ($path -like '*.zip') {
         $unzipped = Join-Path $DownloadDir "$($app.name)-unzipped"
         Expand-Archive -Path $path -DestinationPath $unzipped -Force
@@ -232,15 +261,13 @@ function Install-Package($app, $path) {
         if (-not $msi) { throw "No .msi inside $(Split-Path $path -Leaf)" }
         $path = $msi.FullName
     }
-    $arguments = "$($options.args)".Replace('{configs}', $ConfigsDir)
-    Invoke-Installer -Path $path -Arguments $arguments -Hidden:([bool]$options.hidden)
+    $arguments = "$($app.install.args)".Replace('{configs}', $ConfigsDir)
+    Invoke-Installer -Path $path -Arguments $arguments -Hidden:([bool]$app.install.hidden)
 }
 
-function Get-PortableFolder($app) { Join-Path $PortableDir $app.name }
-
-# An app's "portable" in apps.json: unpack the .zip or .7z into C:\Program Files\<name>.
+# type "portable": unpack the .zip or .7z into the folder that holds exe.
 function Install-Portable($app, $archive) {
-    $folder = Get-PortableFolder $app
+    $folder = Split-Path (Expand-Path $app.exe)
     Write-Info "Extracting to $folder"
     if (Test-Path $folder) { Remove-Item $folder -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $folder | Out-Null
@@ -260,25 +287,31 @@ function Install-Portable($app, $archive) {
     }
 }
 
-# Runs a PowerShell command as the normal desktop user (not admin). Explorer always
-# starts programs un-elevated, so this goes through a temporary .cmd file.
-function Start-Unelevated($name, $command) {
-    $cmdFile = Join-Path $env:TEMP "pc-setup\$name.cmd"
-    New-Item -ItemType Directory -Force -Path (Split-Path $cmdFile) | Out-Null
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-    Set-Content -Path $cmdFile -Encoding ASCII -Value "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded`r`n"
-    Start-Process explorer.exe -ArgumentList "`"$cmdFile`""
+# type "command": run install.command in PowerShell. With install.runAsUser it runs as
+# the normal desktop user in its own window (Explorer always starts programs
+# un-elevated); otherwise it runs as admin and setup waits for it.
+function Invoke-InstallCommand($app) {
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($app.install.command))
+    $powershell = "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded"
+    if ($app.install.runAsUser) {
+        $cmdFile = Join-Path $env:TEMP "pc-setup\$($app.name).cmd"
+        New-Item -ItemType Directory -Force -Path (Split-Path $cmdFile) | Out-Null
+        Set-Content -Path $cmdFile -Encoding ASCII -Value "@echo off`r`n$powershell`r`n"
+        Start-Process explorer.exe -ArgumentList "`"$cmdFile`""
+    } else {
+        Invoke-Installer -Path 'powershell.exe' -Arguments ($powershell -replace '^powershell ', '') -Hidden:([bool]$app.install.hidden)
+    }
 }
 
 
 # =============================================================================
-#  Is it already installed?
+#  Is it already installed?  (detect, or else exe)
 # =============================================================================
 
-# Portable apps: their exe exists. Others: an entry in Windows' installed-programs list
-# (the registry behind Settings > Apps) has a name matching the app's "detect" regex.
+# detect: a regex matched against Windows' installed-programs list (the registry behind
+# Settings > Apps). Without detect: the exe exists.
 function Test-AppInstalled($app) {
-    if ($app.portable) { return Test-Path (Join-Path (Get-PortableFolder $app) $app.portable.exe) }
+    if (-not $app.detect) { return [bool]($app.exe -and (Test-Path (Expand-Path $app.exe))) }
     $uninstallKeys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
                      'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
                      'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*'
@@ -288,77 +321,64 @@ function Test-AppInstalled($app) {
 
 
 # =============================================================================
-#  Finishing steps  (an app's "after" in apps.json; portable apps also get a shortcut)
+#  Finishing touches  (startMenuShortcut, startAtLogon, afterInstall)
 # =============================================================================
-# These run after installing, and again on later runs when the app is already
-# installed, so each one is safe to repeat.
+# These run on every setup run once the app is installed, so each is safe to repeat
+# (and a deleted shortcut or task comes back).
 
-function Invoke-AfterStep($step, $app) {
-    switch ($step) {
-        'startMenuShortcut' { Add-StartMenuShortcut $app }
-        'mpvFileTypes'      { Register-MpvFileTypes $app }
-        'obsLogonTask'      { Register-ObsLogonTask }
-        default             { throw "Unknown step '$step' in apps.json" }
-    }
+function Get-AppExe($app) {
+    $exe = Expand-Path $app.exe
+    if (-not (Test-Path -LiteralPath $exe)) { throw "exe not found: $exe" }
+    $exe
 }
 
-# C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<name>.lnk for a portable app.
+# startMenuShortcut: C:\ProgramData\Microsoft\Windows\Start Menu\Programs\<name>.lnk
 function Add-StartMenuShortcut($app) {
-    $folder = Get-PortableFolder $app
-    $exe = Join-Path $folder $app.portable.exe
-    if (-not (Test-Path -LiteralPath $exe)) { throw "$($app.portable.exe) not found in $folder" }
+    $exe = Get-AppExe $app
     $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $StartMenu "$($app.name).lnk"))
     $shortcut.TargetPath = $exe
-    $shortcut.WorkingDirectory = $folder
+    $shortcut.WorkingDirectory = Split-Path $exe
     $shortcut.IconLocation = "$exe,0"
     $shortcut.Save()
     Write-Info "Start Menu shortcut: $($app.name).lnk"
 }
 
-# Runs the mpv build's own installer\mpv-install.bat /u (unattended): registers mpv's
-# file types, "Open with" entries and Default Apps entry. Skipped if mpv is already
-# registered at this path, unless -Force.
-function Register-MpvFileTypes($app) {
-    $folder = Get-PortableFolder $app
-    $bat = Join-Path $folder 'installer\mpv-install.bat'
-    $exe = Join-Path $folder 'mpv.exe'
-    if (-not (Test-Path -LiteralPath $bat)) { throw "installer\mpv-install.bat not found in $folder" }
-    $appPath = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\mpv.exe' -ErrorAction SilentlyContinue).'(default)'
-    $listed  = Get-ItemProperty 'HKLM:\SOFTWARE\RegisteredApplications' -Name 'mpv' -ErrorAction SilentlyContinue
-    if ($appPath -eq $exe -and $listed -and -not $Force) { Write-Info 'mpv file types already registered'; return }
-    Write-Info 'Registering mpv file types'
-    Invoke-Installer -Path $env:ComSpec -Arguments ('/c ""' + $bat + '" /u"') -Hidden
-}
-
-# Scheduled task: at logon, start OBS as admin (no UAC prompt), minimized to the tray
-# with the replay buffer running. "Start in" must be OBS's own folder, or OBS can't
-# find its language files and won't start.
-function Register-ObsLogonTask {
-    $folder = Join-Path $env:ProgramFiles 'obs-studio\bin\64bit'
-    $exe = Join-Path $folder 'obs64.exe'
-    if (-not (Test-Path -LiteralPath $exe)) { throw "OBS not found at $exe" }
+# startAtLogon: a scheduled task "<name> at logon" that starts exe with args when you log
+# on, as admin without a UAC prompt if admin is true. "Start in" is exe's folder.
+function Register-LogonTask($app) {
+    $exe = Get-AppExe $app
     $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-
-    $action    = New-ScheduledTaskAction -Execute $exe -Argument '--startreplaybuffer --minimize-to-tray' -WorkingDirectory $folder
+    $taskName = "$($app.name) at logon"
+    $actionArgs = @{ Execute = $exe; WorkingDirectory = (Split-Path $exe) }
+    if ($app.startAtLogon.args) { $actionArgs.Argument = $app.startAtLogon.args }
+    $action    = New-ScheduledTaskAction @actionArgs
     $trigger   = New-ScheduledTaskTrigger -AtLogOn -User $user
-    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
+    $runLevel  = if ($app.startAtLogon.admin) { 'Highest' } else { 'Limited' }
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel $runLevel
     $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
         -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-    Register-ScheduledTask -TaskName $ObsTaskName -Action $action -Trigger $trigger -Principal $principal `
-        -Settings $settings -Force -Description 'Starts OBS at logon, minimized to the tray, with the replay buffer running. Created by pc-setup.' | Out-Null
-    Write-Info "Scheduled task '$ObsTaskName' starts OBS at logon for $user"
+    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal `
+        -Settings $settings -Force -Description "Starts $($app.name) at logon. Created by pc-setup." | Out-Null
+    Write-Info "Scheduled task '$taskName'"
+}
+
+# afterInstall: each command runs hidden in cmd.exe, from exe's folder.
+function Invoke-AfterInstall($app, $command) {
+    $folder = Split-Path (Get-AppExe $app)
+    Write-Info "Running: $command"
+    Invoke-Installer -Path $env:ComSpec -Arguments "/c $command" -WorkingDirectory $folder -Hidden
 }
 
 
 # =============================================================================
-#  Configs  (an app's "configs" in apps.json)
+#  Configs
 # =============================================================================
 
-# Copies one backed-up config from configs\ to its place on this PC. Closes the app
-# first, and keeps whatever was there as <name>.bak.
+# Copies one backed-up config from configs\ to its place on this PC. Closes the listed
+# processes first, and keeps whatever was there as <name>.bak.
 function Restore-Config($config) {
     $from = Join-Path $ConfigsDir $config.repo
-    $to = [Environment]::ExpandEnvironmentVariables($config.target)
+    $to = Expand-Path $config.target
     foreach ($process in @($config.closeFirst)) {
         if ($process) { Get-Process -Name $process -ErrorAction SilentlyContinue | Stop-Process -Force }
     }
@@ -388,7 +408,7 @@ function Add-Result($app, $step, $result, $detail) {
 }
 
 # Returns $true if the app is installed afterwards (or was already), so its configs
-# and finishing steps can follow.
+# and finishing touches can follow.
 function Install-App($app) {
     if ((Test-AppInstalled $app) -and -not $Force) {
         Write-Info 'Already installed'
@@ -396,12 +416,16 @@ function Install-App($app) {
         return $true
     }
 
-    if ($app.runUnelevated) {
-        if ($DryRun) { Add-Result $app 'install' 'DryRun' 'opens its own window'; return $false }   # nothing follows SpotX
-        Start-Unelevated $app.name $app.runUnelevated
-        Write-Problem "$($app.name) opened in its own window; it finishes on its own."
-        Add-Result $app 'install' 'OK' 'started in its own window'
-        return $false   # not finished yet, so no configs or finishing steps
+    if ($app.type -eq 'command') {
+        if ($DryRun) { Add-Result $app 'install' 'DryRun' 'would run install.command'; return $false }
+        Invoke-InstallCommand $app
+        if ($app.install.runAsUser) {
+            Write-Problem "$($app.name) opened in its own window; it finishes on its own."
+            Add-Result $app 'install' 'OK' 'started in its own window'
+            return $false   # still running, so configs and finishing touches would be too early
+        }
+        Add-Result $app 'install' 'OK' 'command finished'
+        return $true
     }
 
     $download = Resolve-Source $app.source
@@ -414,14 +438,22 @@ function Install-App($app) {
             if ($length) { $size = '{0:N1} MB' -f ([double]$length / 1MB) }
         } catch { $size = "(link check failed: $($_.Exception.Message))" }
         Add-Result $app 'install' 'DryRun' "$($download.FileName) $size"
-        return $true   # as if installed, so the dry run also lists the configs and finishing steps
+        return $true   # as if installed, so the dry run also lists the later steps
     }
 
     $file = Save-Download $download.Url $download.FileName $download.Sha256
-    if ($app.portable) { Install-Portable $app $file } else { Install-Package $app $file }
+    if ($app.install.signer) { Assert-Signature $file $app.install.signer }
+    if ($app.type -eq 'portable') { Install-Portable $app $file } else { Install-Package $app $file }
     Write-Info 'Installed'
     Add-Result $app 'install' 'OK' $download.FileName
     return $true
+}
+
+# Runs one finishing touch and records the result.
+function Invoke-Step($app, $step, [scriptblock]$action) {
+    if ($DryRun) { Add-Result $app $step 'DryRun' 'would run'; return }
+    try   { & $action; Add-Result $app $step 'OK' '' }
+    catch { Write-Problem "FAILED: $step`: $($_.Exception.Message)"; Add-Result $app $step 'FAILED' $_.Exception.Message }
 }
 
 function Invoke-App($app) {
@@ -432,11 +464,11 @@ function Invoke-App($app) {
         catch {
             Write-Problem "FAILED: $($_.Exception.Message)"
             Add-Result $app 'install' 'FAILED' $_.Exception.Message
-            return   # configs and finishing steps need the app
+            return   # configs and finishing touches need the app
         }
     }
 
-    # 2. Restore configs
+    # 2. Restore configs (the ones that have been backed up into configs\)
     $configs = @($app.configs | Where-Object { $_ -and (Test-Path (Join-Path $ConfigsDir $_.repo)) })
     if ($configs -and -not $SkipConfigs) {
         if ($DryRun) {
@@ -452,15 +484,12 @@ function Invoke-App($app) {
         }
     }
 
-    # 3. Finishing steps
+    # 3. Finishing touches
     if ($ConfigsOnly -or -not $installed) { return }
-    $steps = @()
-    if ($app.portable) { $steps += 'startMenuShortcut' }
-    $steps += @($app.after | Where-Object { $_ })
-    foreach ($step in $steps) {
-        if ($DryRun) { Add-Result $app $step 'DryRun' 'would run'; continue }
-        try   { Invoke-AfterStep $step $app; Add-Result $app $step 'OK' '' }
-        catch { Write-Problem "FAILED: $step`: $($_.Exception.Message)"; Add-Result $app $step 'FAILED' $_.Exception.Message }
+    if ($app.startMenuShortcut)    { Invoke-Step $app 'startMenuShortcut' { Add-StartMenuShortcut $app } }
+    if ($app.startAtLogon.enabled) { Invoke-Step $app 'startAtLogon' { Register-LogonTask $app } }
+    foreach ($command in @($app.afterInstall | Where-Object { $_ })) {
+        Invoke-Step $app 'afterInstall' { Invoke-AfterInstall $app $command }
     }
 }
 
@@ -470,9 +499,18 @@ function Invoke-App($app) {
 # =============================================================================
 
 if (-not (Test-Path -LiteralPath $AppsFile -PathType Leaf)) { throw "Can't find $AppsFile" }
-$apps = @(([IO.File]::ReadAllText($AppsFile) | ConvertFrom-Json).apps | Where-Object {
+$allApps = @(([IO.File]::ReadAllText($AppsFile) | ConvertFrom-Json).apps)
+$problems = @($allApps | ForEach-Object { Test-AppEntry $_ })
+if ($problems) {
+    Write-Host 'apps.json has problems; nothing was changed:' -ForegroundColor Red
+    $problems | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
+    Show-FinalMessage -Warning -Title 'pc-setup: apps.json has problems' -Message ("Nothing was changed. Fix these in apps.json:`n`n" + ($problems -join "`n"))
+    return
+}
+
+$apps = @($allApps | Where-Object {
     (-not $Only -or $Only -contains $_.name) -and -not ($Skip -contains $_.name) -and
-    (-not $ConfigsOnly -or $_.configs)
+    (-not $ConfigsOnly -or @($_.configs).Count)
 })
 
 $number = 0
@@ -488,6 +526,7 @@ Write-Host ($Results | Format-Table -AutoSize | Out-String -Width 160)
 $failed  = @($Results | Where-Object Result -eq 'FAILED')
 $done    = @($Results | Where-Object Result -eq 'OK').Count
 $skipped = @($Results | Where-Object Result -eq 'Skipped').Count
+$ownWindow = @($Results | Where-Object Detail -eq 'started in its own window' | ForEach-Object App)
 
 if ($DryRun) {
     Write-Host 'Dry run finished. Nothing was installed or changed.' -ForegroundColor Green
@@ -501,7 +540,7 @@ if ($DryRun) {
 } else {
     Write-Host 'All done. A restart is recommended.' -ForegroundColor Green
     $note = ''
-    if ($Results | Where-Object Detail -eq 'started in its own window') { $note = "`n`nSpotX finishes in its own window if it is still open." }
+    if ($ownWindow) { $note = "`n`n$($ownWindow -join ', ') finish(es) in its own window if still open." }
     Show-FinalMessage -Title 'pc-setup: all done' -Message (
         "Everything completed successfully.`n`n$done step(s) done and $skipped app(s) already installed.$note`n`nA restart is recommended.")
 }

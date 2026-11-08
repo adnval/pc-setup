@@ -2,98 +2,166 @@
   "apps": [
     {
       "name": "7zip",
-      "note": "First, because LosslessCut and mpv come as .7z archives.",
+      "type": "installer",
+      "source": { "from": "github", "location": "ip7z/7zip", "file": "^7z\\d+-x64\\.exe$" },
+      "install": { "args": "/S", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "%ProgramFiles%\\7-Zip\\7zFM.exe",
       "detect": "^7-Zip",
-      "source": { "github": "ip7z/7zip", "asset": "^7z\\d+-x64\\.exe$" },
-      "install": { "args": "/S" }
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "OBS",
+      "type": "installer",
+      "source": { "from": "github", "location": "obsproject/obs-studio", "file": "Windows-x64-Installer\\.exe$" },
+      "install": { "args": "/S", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "%ProgramFiles%\\obs-studio\\bin\\64bit\\obs64.exe",
       "detect": "^OBS Studio",
-      "source": { "github": "obsproject/obs-studio", "asset": "Windows-x64-Installer\\.exe$" },
-      "install": { "args": "/S" },
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": true, "args": "--startreplaybuffer --minimize-to-tray", "admin": true },
+      "afterInstall": [],
       "configs": [
         { "repo": "obs-studio/basic",      "target": "%APPDATA%\\obs-studio\\basic",      "closeFirst": ["obs64"] },
         { "repo": "obs-studio/global.ini", "target": "%APPDATA%\\obs-studio\\global.ini", "closeFirst": ["obs64"] },
         { "repo": "obs-studio/user.ini",   "target": "%APPDATA%\\obs-studio\\user.ini",   "closeFirst": ["obs64"] }
-      ],
-      "after": ["obsLogonTask"]
+      ]
     },
     {
       "name": "Discord",
+      "type": "installer",
+      "source": { "from": "url", "location": "https://discord.com/api/downloads/distributions/app/installers/latest?channel=stable&platform=win&arch=x64", "file": "DiscordSetup.exe" },
+      "install": { "args": "-s", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "",
       "detect": "^Discord$",
-      "source": {
-        "url": "https://discord.com/api/downloads/distributions/app/installers/latest?channel=stable&platform=win&arch=x64",
-        "file": "DiscordSetup.exe"
-      },
-      "install": { "args": "-s" }
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "SpotX",
-      "note": "Installs Spotify and patches it. Spotify refuses to install as admin, so this runs in its own normal-user window.",
+      "type": "command",
+      "source": { "from": "", "location": "", "file": "" },
+      "install": { "args": "", "hidden": false, "signer": "", "runAsUser": true,
+                   "command": "iex \"& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/refs/heads/main/run.ps1') } -confirm_uninstall_ms_spoti -confirm_spoti_recomended_over -podcasts_off -block_update_on -start_spoti -new_theme -adsections_off -lyrics_stat spotify\"" },
+      "exe": "",
       "detect": "^Spotify",
-      "runUnelevated": "iex \"& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/refs/heads/main/run.ps1') } -confirm_uninstall_ms_spoti -confirm_spoti_recomended_over -podcasts_off -block_update_on -start_spoti -new_theme -adsections_off -lyrics_stat spotify\""
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "NotepadPP",
+      "type": "installer",
+      "source": { "from": "github", "location": "notepad-plus-plus/notepad-plus-plus", "file": "\\.Installer\\.x64\\.exe$" },
+      "install": { "args": "/S", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "",
       "detect": "^Notepad\\+\\+",
-      "source": { "github": "notepad-plus-plus/notepad-plus-plus", "asset": "\\.Installer\\.x64\\.exe$" },
-      "install": { "args": "/S" }
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "Lightshot",
+      "type": "installer",
+      "source": { "from": "url", "location": "https://app.prntscr.com/build/setup-lightshot.exe", "file": "setup-lightshot.exe" },
+      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "",
       "detect": "^Lightshot",
-      "source": { "url": "https://app.prntscr.com/build/setup-lightshot.exe", "file": "setup-lightshot.exe" },
-      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" }
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "LosslessCut",
-      "source": { "github": "mifi/lossless-cut", "asset": "^LosslessCut-win-x64\\.7z$" },
-      "portable": { "exe": "LosslessCut.exe" },
+      "type": "portable",
+      "source": { "from": "github", "location": "mifi/lossless-cut", "file": "^LosslessCut-win-x64\\.7z$" },
+      "install": { "args": "", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "%ProgramFiles%\\LosslessCut\\LosslessCut.exe",
+      "detect": "",
+      "startMenuShortcut": true,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
       "configs": [
         { "repo": "LosslessCut/config.json", "target": "%APPDATA%\\LosslessCut\\config.json", "closeFirst": ["LosslessCut"] }
       ]
     },
     {
       "name": "mpv",
-      "note": "The v3 build needs a CPU from about 2015 or later (AVX2).",
-      "source": { "github": "shinchiro/mpv-winbuild-cmake", "asset": "^mpv-x86_64-v3-\\d+-git-.*\\.7z$" },
-      "portable": { "exe": "mpv.exe" },
-      "after": ["mpvFileTypes"]
+      "type": "portable",
+      "source": { "from": "github", "location": "shinchiro/mpv-winbuild-cmake", "file": "^mpv-x86_64-v3-\\d+-git-.*\\.7z$" },
+      "install": { "args": "", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "%ProgramFiles%\\mpv\\mpv.exe",
+      "detect": "",
+      "startMenuShortcut": true,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": ["installer\\mpv-install.bat /u"],
+      "configs": []
     },
     {
       "name": "PaintNET",
+      "type": "installer",
+      "source": { "from": "github", "location": "paintdotnet/release", "file": "\\.winmsi\\.x64\\.zip$" },
+      "install": { "args": "", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "",
       "detect": "^paint\\.net",
-      "source": { "github": "paintdotnet/release", "asset": "\\.winmsi\\.x64\\.zip$" },
-      "install": {}
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "Revo",
+      "type": "installer",
+      "source": { "from": "url", "location": "https://download.revouninstaller.com/download/revosetup.exe", "file": "revosetup.exe" },
+      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "",
       "detect": "^Revo Uninstaller",
-      "source": { "url": "https://download.revouninstaller.com/download/revosetup.exe", "file": "revosetup.exe" },
-      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" }
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "HWiNFO",
+      "type": "installer",
+      "source": { "from": "sourceforge", "location": "hwinfo/Windows_Installer", "file": "^hwi64_\\d+\\.exe$" },
+      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", "hidden": false, "signer": "REALiX", "command": "", "runAsUser": false },
+      "exe": "",
       "detect": "^HWiNFO",
-      "source": { "sourceforge": "hwinfo", "folder": "Windows_Installer", "file": "^hwi64_\\d+\\.exe$" },
-      "install": { "args": "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART", "signer": "REALiX" }
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "ZenTimings",
-      "source": { "github": "irusanov/ZenTimings", "asset": "^ZenTimings_.*\\.zip$" },
-      "portable": { "exe": "ZenTimings.exe" }
+      "type": "portable",
+      "source": { "from": "github", "location": "irusanov/ZenTimings", "file": "^ZenTimings_.*\\.zip$" },
+      "install": { "args": "", "hidden": false, "signer": "", "command": "", "runAsUser": false },
+      "exe": "%ProgramFiles%\\ZenTimings\\ZenTimings.exe",
+      "detect": "",
+      "startMenuShortcut": true,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     },
     {
       "name": "Office",
-      "note": "Microsoft 365 apps via the Office Deployment Tool. Which apps: configs/Office/Configuration.xml.",
+      "type": "installer",
+      "source": { "from": "url", "location": "https://officecdn.microsoft.com/pr/wsus/setup.exe", "file": "odt-setup.exe" },
+      "install": { "args": "/configure \"{configs}\\Office\\Configuration.xml\"", "hidden": true, "signer": "O=Microsoft Corporation", "command": "", "runAsUser": false },
+      "exe": "",
       "detect": "^Microsoft (365|Office)",
-      "source": { "url": "https://officecdn.microsoft.com/pr/wsus/setup.exe", "file": "odt-setup.exe" },
-      "install": {
-        "args": "/configure \"{configs}\\Office\\Configuration.xml\"",
-        "signer": "O=Microsoft Corporation",
-        "hidden": true
-      }
+      "startMenuShortcut": false,
+      "startAtLogon": { "enabled": false, "args": "", "admin": false },
+      "afterInstall": [],
+      "configs": []
     }
   ]
 }
