@@ -37,9 +37,6 @@ iex "& { $(iwr -useb 'https://raw.githubusercontent.com/SpotX-Official/SpotX/ref
     @{ Name = 'Lightshot'; Detect = '^Lightshot'; Type = 'exe'; Args = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART'
        Resolve = { @{ Url = 'https://app.prntscr.com/build/setup-lightshot.exe'; Name = 'setup-lightshot.exe' } } }
 
-    @{ Name = 'LGHub'; Detect = '^Logitech G HUB'; Type = 'exe'; Args = '--silent'
-       Resolve = { @{ Url = 'https://download01.logitech.com/web/ftp/pub/techsupport/gaming/lghub_installer.exe'; Name = 'lghub_installer.exe' } } }
-
     @{ Name = 'LosslessCut'; Detect = "$env:ProgramFiles\LosslessCut\LosslessCut.exe"; Type = 'portable'; Exe = 'LosslessCut.exe'
        Resolve = { Get-GitHubAsset 'mifi/lossless-cut' '^LosslessCut-win-x64\.7z$' } }
 

@@ -30,19 +30,5 @@
     "StopProcesses": [
       "LosslessCut"
     ]
-  },
-  {
-    "App": "LGHub",
-    "Repo": "configs/LGHUB/settings.db",
-    "Target": "%LOCALAPPDATA%\\LGHUB\\settings.db",
-    "StopProcesses": [
-      "lghub",
-      "lghub_agent",
-      "lghub_updater",
-      "lghub_system_tray"
-    ],
-    "StopServices": [
-      "LGHUBUpdaterService"
-    ]
   }
 ]

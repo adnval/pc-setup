@@ -24,7 +24,6 @@ This copies the files listed in `configs/map.json`:
 |---|---|---|
 | OBS Studio | profiles, scene collections, app settings and window layout | `%APPDATA%\obs-studio\basic`, `global.ini`, `user.ini` |
 | LosslessCut | settings | `%APPDATA%\LosslessCut\config.json` |
-| Logitech G HUB | device profiles, macros, lighting | `%LOCALAPPDATA%\LGHUB\settings.db` |
 
 > **This repo is public.** Before you push, check that nothing private is in `configs/`.
 > OBS stores stream keys in `basic\profiles\<name>\service.json`, so delete that file
@@ -63,7 +62,7 @@ To run it again from the downloaded copy with options:
 cd $env:TEMP\pc-setup\pc-setup-main
 .\setup.ps1 -DryRun                 # list every download link and size, change nothing
 .\setup.ps1 -Only OBS,Discord       # install just these
-.\setup.ps1 -Skip LGHub,Office      # everything except these
+.\setup.ps1 -Skip Office,Revo       # everything except these
 .\setup.ps1 -ConfigsOnly            # only copy configs back
 .\setup.ps1 -Force                  # reinstall even if already installed
 ```
@@ -78,7 +77,6 @@ cd $env:TEMP\pc-setup\pc-setup-main
 | `SpotX` | Spotify + SpotX | SpotX `run.ps1` (opens in its own window) |
 | `NotepadPP` | Notepad++ | GitHub `notepad-plus-plus/notepad-plus-plus` |
 | `Lightshot` | Lightshot | app.prntscr.com |
-| `LGHub` | Logitech G HUB | logitech.com |
 | `LosslessCut` | LosslessCut (portable, `C:\Program Files`) | GitHub `mifi/lossless-cut` |
 | `mpv` | mpv (portable, `C:\Program Files`) | GitHub `shinchiro/mpv-winbuild-cmake` |
 | `PaintNET` | Paint.NET | GitHub `paintdotnet/release` |
