@@ -4,6 +4,9 @@
     restore its configs from configs\, then add its shortcut, logon task and
     after-install commands.
 
+    With -Backup it does the reverse for configs, on the old PC before wiping: copies
+    each app's configs from this PC into configs\ (backup-configs.ps1 runs this).
+
 .EXAMPLE
     .\setup.ps1                     # everything
     .\setup.ps1 -Only OBS,Discord   # just these apps
@@ -12,6 +15,7 @@
     .\setup.ps1 -SkipConfigs        # don't restore configs
     .\setup.ps1 -DryRun             # show what would happen, change nothing
     .\setup.ps1 -Force              # reinstall apps that are already installed
+    .\setup.ps1 -Backup             # copy configs from this PC into configs\ (no admin)
 #>
 param(
     [string[]]$Only,
@@ -19,7 +23,8 @@ param(
     [switch]$ConfigsOnly,
     [switch]$SkipConfigs,
     [switch]$DryRun,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$Backup
 )
 
 # "-Only OBS,Discord" arrives as one string when relaunched with -File, so split it.
@@ -41,11 +46,12 @@ $UserAgent   = 'pc-setup-script'
 #  Run as administrator
 # =============================================================================
 # Installing to Program Files, registering file types and creating logon tasks need
-# admin. Windows can't raise a running window to admin, so relaunch in a new one.
+# admin (a dry run and -Backup don't). Windows can't raise a running window to admin,
+# so relaunch in a new one.
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).
     IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin -and -not $DryRun) {
+if (-not $isAdmin -and -not $DryRun -and -not $Backup) {
     $argList = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NoExit', '-File', "`"$PSCommandPath`"")
     foreach ($param in $PSBoundParameters.GetEnumerator()) {
         if ($param.Value -is [switch]) { if ($param.Value) { $argList += "-$($param.Key)" } }
@@ -379,17 +385,21 @@ function Invoke-InstallCommand($app) {
 #  4. Configs
 # =============================================================================
 
-# configs: "path inside configs\": "path on this PC". Only the ones backed up so far.
-function Get-AppConfigs($app) {
+# configs: "path inside configs\": "path on this PC". Repo is the full path of the copy
+# in configs\, Target the expanded path on this PC. -BackedUpOnly: only the ones that
+# have a copy in configs\ (the ones setup can restore).
+function Get-AppConfigs($app, [switch]$BackedUpOnly) {
     if (-not $app.configs) { return @() }
-    @($app.configs.PSObject.Properties | Where-Object { Test-Path (Join-Path $ConfigsDir $_.Name) } |
-        ForEach-Object { [pscustomobject]@{ Repo = $_.Name; Target = $_.Value } })
+    @($app.configs.PSObject.Properties | ForEach-Object {
+        [pscustomobject]@{ Name = $_.Name; Repo = (Join-Path $ConfigsDir $_.Name); Target = (Expand-Path $_.Value) }
+    } | Where-Object { -not $BackedUpOnly -or (Test-Path $_.Repo) })
 }
 
-# Copies one config to its place on this PC, keeping whatever was there as .bak.
+# setup: copies one config from configs\ to its place on this PC, keeping whatever was
+# there as .bak.
 function Restore-Config($config) {
-    $from = Join-Path $ConfigsDir $config.Repo
-    $to = Expand-Path $config.Target
+    $from = $config.Repo
+    $to = $config.Target
     if (Test-Path $to) {
         if (Test-Path "$to.bak") { Remove-Item "$to.bak" -Recurse -Force }
         Copy-Item $to "$to.bak" -Recurse -Force
@@ -401,6 +411,13 @@ function Restore-Config($config) {
         New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
         Copy-Item $from $to -Force
     }
+}
+
+# -Backup: copies one config from this PC into configs\, replacing the old copy.
+function Save-Config($config) {
+    if (Test-Path $config.Repo) { Remove-Item $config.Repo -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Split-Path $config.Repo) | Out-Null
+    Copy-Item $config.Target $config.Repo -Recurse -Force
 }
 
 
@@ -470,7 +487,7 @@ function Install-App($app) {
     }
 
     if ($app.command) {
-        if ($DryRun) { Add-Result $app 'install' 'DryRun' 'would run command'; return $false }
+        if ($DryRun) { Write-Done 'Would run command'; Add-Result $app 'install' 'DryRun' 'would run command'; return $false }
         Invoke-InstallCommand $app
         if ($app.runAsUser) {
             Add-Result $app 'install' 'OK' 'started in its own window'
@@ -497,9 +514,9 @@ function Install-App($app) {
 
 # Closes the app's processes and restores its backed-up configs.
 function Restore-AppConfigs($app) {
-    $configs = @(Get-AppConfigs $app)   # @() keeps a single config as a list
+    $configs = @(Get-AppConfigs $app -BackedUpOnly)   # @() keeps a single config as a list
     if (-not $configs) { return }
-    $names = ($configs | ForEach-Object Repo) -join ', '
+    $names = ($configs | ForEach-Object Name) -join ', '
     if ($DryRun) { Write-Done "Would restore configs: $names"; Add-Result $app 'configs' 'DryRun' "would restore $($configs.Count)"; return }
 
     foreach ($process in $app.close) { Get-Process -Name $process -ErrorAction SilentlyContinue | Stop-Process -Force }
@@ -507,10 +524,28 @@ function Restore-AppConfigs($app) {
     $errors = @()
     foreach ($config in $configs) {
         try { Restore-Config $config }
-        catch { Write-Failure "restoring $($config.Repo): $($_.Exception.Message)"; $errors += "$($config.Repo): $($_.Exception.Message)" }
+        catch { Write-Failure "restoring $($config.Name): $($_.Exception.Message)"; $errors += "$($config.Name): $($_.Exception.Message)" }
     }
     if ($errors) { Add-Result $app 'configs' 'FAILED' ($errors -join '; ') }
     else         { Write-Done "Restored configs: $names"; Add-Result $app 'configs' 'OK' "$($configs.Count) restored" }
+}
+
+# -Backup: waits until the app is closed (an open app may have its files half-written
+# or locked), then copies its configs from this PC into configs\.
+function Backup-AppConfigs($app) {
+    while ($running = @($app.close | ForEach-Object { Get-Process -Name $_ -ErrorAction SilentlyContinue })) {
+        Write-Host "    Close $($app.name) ($(($running.Name | Sort-Object -Unique) -join ', ')), then press Enter." -ForegroundColor Yellow
+        [void](Read-Host)
+    }
+    foreach ($config in Get-AppConfigs $app) {
+        if (-not (Test-Path $config.Target)) {
+            Write-Note "Not on this PC: $($config.Target)"
+            Add-Result $app $config.Name 'Skipped' 'not on this PC'
+            continue
+        }
+        try   { Save-Config $config; Write-Done "Saved $($config.Name)"; Add-Result $app $config.Name 'OK' }
+        catch { Write-Failure "$($config.Name): $($_.Exception.Message)"; Add-Result $app $config.Name 'FAILED' $_.Exception.Message }
+    }
 }
 
 # Runs one finishing touch and records the result. $description finishes the sentence
@@ -548,10 +583,91 @@ function Invoke-App($app) {
 
 
 # =============================================================================
+#  Whole run: setup, or -Backup
+# =============================================================================
+
+# Bulleted lines for the pop-up.
+function Format-List($lines) { ($lines | ForEach-Object { "  - $_" }) -join "`n" }
+
+function Invoke-Setup($apps) {
+    for ($i = 0; $i -lt $apps.Count; $i++) {
+        Show-OverallProgress -Index ($i + 1) -Total $apps.Count -Name $apps[$i].name
+        Write-Step "[$($i + 1)/$($apps.Count)] $($apps[$i].name)"
+        Invoke-App $apps[$i]
+    }
+    Show-OverallProgress -Completed
+
+    # Summary: apps grouped by what happened, then failures with their reasons.
+    $installRows = @($Results | Where-Object Step -eq 'install')
+    $ownWindow   = @($installRows | Where-Object Detail -eq 'started in its own window' | ForEach-Object App)
+    $groups = [ordered]@{
+        'Installed'               = @($installRows | Where-Object { $_.Result -eq 'OK' -and $_.App -notin $ownWindow } | ForEach-Object App)
+        'Already installed'       = @($installRows | Where-Object Result -eq 'Skipped' | ForEach-Object App)
+        'Finishing in own window' = $ownWindow
+        'Configs restored'        = @($Results | Where-Object { $_.Step -eq 'configs' -and $_.Result -eq 'OK' } | ForEach-Object App)
+        'Would install'           = @($installRows | Where-Object Result -eq 'DryRun' | ForEach-Object App)
+    }
+    $failed = @($Results | Where-Object Result -eq 'FAILED' | ForEach-Object { "$($_.App) ($($_.Step)): $($_.Detail)" })
+
+    Write-Step 'Summary'
+    foreach ($group in $groups.GetEnumerator()) {
+        if ($group.Value) { Write-Done ('{0,-24} {1}' -f "$($group.Key):", ($group.Value -join ', ')) }
+    }
+    foreach ($line in $failed) { Write-Failure $line }
+
+    $done    = @($Results | Where-Object Result -eq 'OK').Count
+    $skipped = $groups['Already installed'].Count
+    if ($DryRun) {
+        Show-FinalMessage -Title 'pc-setup: dry run finished' -Message 'Dry run finished. Nothing was installed or changed.'
+    } elseif ($failed) {
+        Show-FinalMessage -Warning -Title 'pc-setup: finished with problems' -Message (
+            "$($failed.Count) step(s) failed:`n`n$(Format-List $failed)`n`n$done succeeded and $skipped app(s) were already installed.`n" +
+            'Run setup again to retry; finished apps are skipped.')
+    } else {
+        $note = if ($ownWindow) { "`n`nStill finishing in their own window: $($ownWindow -join ', ')." } else { '' }
+        Show-FinalMessage -Title 'pc-setup: all done' -Message (
+            "Everything completed successfully.`n`n$done step(s) done and $skipped app(s) already installed.$note`n`nA restart is recommended.")
+    }
+}
+
+function Invoke-Backup($apps) {
+    foreach ($app in $apps) {
+        Write-Step $app.name
+        Backup-AppConfigs $app
+    }
+
+    $saved    = @($Results | Where-Object Result -eq 'OK')
+    $notFound = @($Results | Where-Object Result -eq 'Skipped' | ForEach-Object { "$($_.App): $($_.Step)" })
+    $failed   = @($Results | Where-Object Result -eq 'FAILED'  | ForEach-Object { "$($_.App): $($_.Step): $($_.Detail)" })
+    # OBS keeps the stream key in service.json, which must not go into a public repo.
+    $streamKeys = @(Get-ChildItem $ConfigsDir -Recurse -Filter 'service.json' -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName.Substring($PSScriptRoot.Length).TrimStart('\', '/') })
+
+    Write-Step 'Summary'
+    Write-Done ('{0,-15} {1}' -f 'Saved:', $saved.Count)
+    if ($notFound) { Write-Note ('{0,-15} {1}' -f 'Not on this PC:', ($notFound -join ', ')) }
+    foreach ($line in $failed) { Write-Failure $line }
+    foreach ($file in $streamKeys) { Write-Host "    Delete before uploading (stream key): $file" -ForegroundColor Yellow }
+    Write-Done 'Next: upload the configs folder to GitHub (Add file > Upload files).'
+
+    $message = "$($saved.Count) config(s) saved to the configs folder."
+    if ($notFound)   { $message += "`n`nNot on this PC (skipped):`n$(Format-List $notFound)" }
+    if ($failed)     { $message += "`n`nFailed:`n$(Format-List $failed)`n`nClose those apps and run the backup again." }
+    if ($streamKeys) { $message += "`n`nDelete before uploading (it holds your stream key):`n$(Format-List $streamKeys)" }
+    $title = if ($failed) { 'pc-setup backup: finished with problems' } else { 'pc-setup backup: done' }
+    Show-FinalMessage -Title $title -Message $message -Warning:([bool]($failed -or $streamKeys))
+}
+
+
+# =============================================================================
 #  Main
 # =============================================================================
 
-if (-not (Test-Path -LiteralPath $AppsFile -PathType Leaf)) { throw "Can't find $AppsFile" }
+if (-not (Test-Path -LiteralPath $AppsFile -PathType Leaf)) {
+    Write-Host "Can't find $AppsFile" -ForegroundColor Red
+    Write-Host 'Run this from inside the pc-setup folder (the one with apps.json).'
+    return
+}
 $entries = @(([IO.File]::ReadAllText($AppsFile) | ConvertFrom-Json).apps)
 
 $problems = @($entries | ForEach-Object { Test-AppEntry $_ })
@@ -565,44 +681,7 @@ if ($problems) {
 
 $apps = @($entries | ForEach-Object { Complete-App $_ } | Where-Object {
     (-not $Only -or $Only -contains $_.name) -and -not ($Skip -contains $_.name) -and
-    (-not $ConfigsOnly -or $_.configs)
+    (-not ($ConfigsOnly -or $Backup) -or $_.configs)
 })
 
-for ($i = 0; $i -lt $apps.Count; $i++) {
-    Show-OverallProgress -Index ($i + 1) -Total $apps.Count -Name $apps[$i].name
-    Write-Step "[$($i + 1)/$($apps.Count)] $($apps[$i].name)"
-    Invoke-App $apps[$i]
-}
-Show-OverallProgress -Completed
-
-# Summary: apps grouped by what happened, then failures with their reasons.
-function Get-AppNames($filter) { @($Results | Where-Object $filter | ForEach-Object App | Select-Object -Unique) }
-$groups = [ordered]@{
-    'Installed'               = Get-AppNames { $_.Step -eq 'install' -and $_.Result -eq 'OK' -and $_.Detail -ne 'started in its own window' }
-    'Already installed'       = Get-AppNames { $_.Step -eq 'install' -and $_.Result -eq 'Skipped' }
-    'Finishing in own window' = Get-AppNames { $_.Detail -eq 'started in its own window' }
-    'Configs restored'        = Get-AppNames { $_.Step -eq 'configs' -and $_.Result -eq 'OK' }
-    'Would install'           = Get-AppNames { $_.Step -eq 'install' -and $_.Result -eq 'DryRun' }
-}
-Write-Step 'Summary'
-foreach ($group in $groups.GetEnumerator()) {
-    if ($group.Value) { Write-Done ('{0,-24} {1}' -f "$($group.Key):", ($group.Value -join ', ')) }
-}
-$failed    = @($Results | Where-Object Result -eq 'FAILED')
-foreach ($row in $failed) { Write-Failure "$($row.App) ($($row.Step)): $($row.Detail)" }
-$done      = @($Results | Where-Object Result -eq 'OK').Count
-$skipped   = @($Results | Where-Object Result -eq 'Skipped').Count
-$ownWindow = @($Results | Where-Object Detail -eq 'started in its own window' | ForEach-Object App)
-
-if ($DryRun) {
-    Show-FinalMessage -Title 'pc-setup: dry run finished' -Message 'Dry run finished. Nothing was installed or changed.'
-} elseif ($failed) {
-    $list = ($failed | ForEach-Object { "  - $($_.App) ($($_.Step)): $($_.Detail)" }) -join "`n"
-    Show-FinalMessage -Warning -Title 'pc-setup: finished with problems' -Message (
-        "$($failed.Count) step(s) failed:`n`n$list`n`n$done succeeded and $skipped app(s) were already installed.`n" +
-        'Run setup again to retry; finished apps are skipped.')
-} else {
-    $note = if ($ownWindow) { "`n`nStill finishing in their own window: $($ownWindow -join ', ')." } else { '' }
-    Show-FinalMessage -Title 'pc-setup: all done' -Message (
-        "Everything completed successfully.`n`n$done step(s) done and $skipped app(s) already installed.$note`n`nA restart is recommended.")
-}
+if ($Backup) { Invoke-Backup $apps } else { Invoke-Setup $apps }

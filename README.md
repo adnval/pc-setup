@@ -36,6 +36,7 @@ From `$env:TEMP\pc-setup\pc-setup-main`, after `Set-ExecutionPolicy -Scope Proce
 | `.\setup.ps1 -ConfigsOnly` | Only restore configs |
 | `.\setup.ps1 -SkipConfigs` | Don't restore configs |
 | `.\setup.ps1 -Force` | Reinstall apps that are already installed |
+| `.\setup.ps1 -Backup` | Copy configs from this PC into `configs\` (what `backup-configs.ps1` runs) |
 
 ## Apps
 
