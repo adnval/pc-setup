@@ -60,20 +60,28 @@ if (-not $isAdmin -and -not $DryRun) {
 #  Console output
 # =============================================================================
 
-function Write-Step($text)    { Write-Host "==> $text" -ForegroundColor Cyan }
-function Write-Info($text)    { Write-Host "    $text" -ForegroundColor Green }
-function Write-Problem($text) { Write-Host "    $text" -ForegroundColor Yellow }
+# One app = a heading, then one indented line per thing that happened.
+function Write-Step($text) { Write-Host "`n==> $text" -ForegroundColor Cyan }
+function Write-Done($text) { Write-Host "    $text" }
+function Write-Note($text) { Write-Host "    $text" -ForegroundColor DarkGray }
 
-# Rewrites the current console line (live download and install status).
-function Write-Status {
-    param([string]$Text, [switch]$Done, [string]$Color = 'Gray')
-    $width = 79
-    try { if ([Console]::WindowWidth -gt 20) { $width = [Console]::WindowWidth - 1 } } catch { }
-    $line = "    $Text"
-    if ($line.Length -gt $width) { $line = $line.Substring(0, $width) }
-    Write-Host ("`r" + $line.PadRight($width)) -NoNewline -ForegroundColor $Color
-    if ($Done) { Write-Host '' }
+function Get-ConsoleWidth {
+    try { if ([Console]::WindowWidth -gt 20) { return [Console]::WindowWidth - 1 } } catch { }
+    79
 }
+
+# Rewrites the current line while something runs ("Downloading... 63%"). With -Done it
+# writes the final text in full and moves to the next line.
+function Write-Status([string]$text, [switch]$Done) {
+    $width = Get-ConsoleWidth
+    $line = "    $text"
+    if ($Done) { Write-Host ("`r" + $line.PadRight($width)); return }
+    if ($line.Length -gt $width) { $line = $line.Substring(0, $width) }   # must fit to be redrawn
+    Write-Host ("`r" + $line.PadRight($width)) -NoNewline -ForegroundColor DarkGray
+}
+
+# Starts at the beginning of the line, so it also replaces a half-drawn status line.
+function Write-Failure($text) { Write-Host ("`r    FAILED $text".PadRight((Get-ConsoleWidth) + 1)) -ForegroundColor Red }
 
 function Format-Elapsed([TimeSpan]$time) { '{0}:{1:00}' -f [int][math]::Floor($time.TotalMinutes), $time.Seconds }
 
@@ -86,11 +94,9 @@ function Show-OverallProgress {
         -PercentComplete ([int](($Index - 1) * 100 / [math]::Max($Total, 1)))
 }
 
-# Prints a message, then shows it in a message box on top of every window so the end
-# of the run gets noticed.
+# Message box on top of every window, so the end of the run gets noticed.
 function Show-FinalMessage {
     param([string]$Title, [string]$Message, [switch]$Warning)
-    Write-Host "`n$Message" -ForegroundColor $(if ($Warning) { 'Yellow' } else { 'Green' })
     try {
         Add-Type -AssemblyName System.Windows.Forms
         $owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true }
@@ -98,7 +104,7 @@ function Show-FinalMessage {
         [void][System.Windows.Forms.MessageBox]::Show($owner, $Message, $Title, 'OK', $icon)
         $owner.Dispose()
     } catch {
-        [void](Read-Host "$Title - press Enter to close")
+        [void](Read-Host "`n$Title - press Enter to close")
     }
 }
 
@@ -212,13 +218,13 @@ function Get-SourceForgeFile($location, $pattern) {
     @{ Url = "https://downloads.sourceforge.net/project/$project/$folder/$name"; FileName = $name }
 }
 
-# For -DryRun: the download's size from the server, without downloading it.
+# For -DryRun: checks the link and returns the download's size, without downloading it.
 function Get-DownloadSize($url) {
     try {
         $head = Invoke-WebRequest -UseBasicParsing -Method Head -Uri $url
         $length = @($head.Headers['Content-Length'])[0]   # a string in PowerShell 5.1, a list in 7
-        if ($length) { '{0:N1} MB' -f ([double]$length / 1MB) }
-    } catch { "(link check failed: $($_.Exception.Message))" }
+        if ($length) { '{0:N1} MB' -f ([double]$length / 1MB) } else { 'size unknown' }
+    } catch { "link check failed: $($_.Exception.Message)" }
 }
 
 
@@ -226,8 +232,9 @@ function Get-DownloadSize($url) {
 #  3. Downloading and installing
 # =============================================================================
 
-# Downloads with a live "63%  95.9 / 152.4 MB  24.1 MB/s" line, then checks the file.
-function Save-Download($url, $fileName, $sha256) {
+# Downloads with a live "63%  95.9 / 152.4 MB  24.1 MB/s" line, checks the file, and
+# ends with one line: "Downloaded <file>  (152.4 MB, 0:06, SHA256 OK)".
+function Save-Download($url, $fileName, $sha256, $signer) {
     New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
     $path = Join-Path $DownloadDir $fileName
 
@@ -237,7 +244,7 @@ function Save-Download($url, $fileName, $sha256) {
     [void]$client.DefaultRequestHeaders.UserAgent.TryParseAdd($UserAgent)
     try {
         $response = $client.GetAsync($url, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
-        if (-not $response.IsSuccessStatusCode) { throw "Download failed: HTTP $([int]$response.StatusCode) $($response.ReasonPhrase)" }
+        if (-not $response.IsSuccessStatusCode) { throw "download failed: HTTP $([int]$response.StatusCode) $($response.ReasonPhrase) ($url)" }
         $total      = $response.Content.Headers.ContentLength
         $webStream  = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $fileStream = [IO.File]::Create($path)
@@ -259,38 +266,45 @@ function Save-Download($url, $fileName, $sha256) {
                     }
                 }
             }
-            Write-Status ('Downloaded {0}  {1:N1} MB  ({2})' -f $fileName, ($done / 1MB), (Format-Elapsed $timer.Elapsed)) -Done -Color Green
         } finally { $fileStream.Dispose(); $webStream.Dispose() }
     } finally { $client.Dispose() }
 
-    # A web page saved as .exe means the site didn't hand out the real file.
-    if ($path -like '*.exe') {
-        $header = [IO.File]::ReadAllBytes($path)[0..1]
-        if (-not ($header[0] -eq 0x4D -and $header[1] -eq 0x5A)) { throw "$fileName is not a Windows program (the site returned a web page)" }
-    }
-    if ($sha256) {
-        $actual = (Get-FileHash -Algorithm SHA256 -Path $path).Hash
-        if ($actual -ne $sha256.ToUpper()) { throw "SHA256 mismatch for $fileName (expected $sha256, got $actual)" }
-        Write-Info 'SHA256 verified'
+    $details = @(('{0:N1} MB' -f ($done / 1MB)), (Format-Elapsed $timer.Elapsed))
+    try {
+        # A web page saved as .exe means the site didn't hand out the real file.
+        if ($path -like '*.exe') {
+            $header = [IO.File]::ReadAllBytes($path)[0..1]
+            if (-not ($header[0] -eq 0x4D -and $header[1] -eq 0x5A)) { throw "$fileName is not a Windows program (the site returned a web page)" }
+        }
+        if ($sha256) {
+            $actual = (Get-FileHash -Algorithm SHA256 -Path $path).Hash
+            if ($actual -ne $sha256.ToUpper()) { throw "SHA256 mismatch for $fileName (expected $sha256, got $actual)" }
+            $details += 'SHA256 OK'
+        }
+        if ($signer) { $details += "signed by $(Assert-Signature $path $signer)" }
+    } finally {
+        Write-Status "Downloaded $fileName  ($($details -join ', '))" -Done
     }
     $path
 }
 
 # signer: stop unless the file is validly signed by a publisher matching the regex.
+# Returns the publisher's name.
 function Assert-Signature($path, $signer) {
     $signature = Get-AuthenticodeSignature $path
     $subject = $signature.SignerCertificate.Subject
     if ($signature.Status -ne 'Valid' -or $subject -notmatch $signer) {
-        throw "Signature check failed ($($signature.Status), signer: $subject). Not running it."
+        throw "signature check failed ($($signature.Status), signer: $subject); not running it"
     }
-    Write-Info "Signed by: $subject"
+    if ($subject -match 'CN=("[^"]+"|[^,]+)') { $Matches[1].Trim('"') } else { $subject }
 }
 
-# Runs a program and shows "Running... 0:45" until it exits. Waits for that process only,
-# so an app an installer opens at the end (like Discord) doesn't hold things up.
-# An .msi is run silently through msiexec.
+# Runs a program, showing "<Doing>... 0:12" until it exits, then "<Done>  (0:38)".
+# Waits for that process only, so an app an installer opens at the end (like Discord)
+# doesn't hold things up. An .msi is run silently through msiexec.
 function Invoke-Program {
-    param([string]$Path, [string]$Arguments, [switch]$Hidden, [string]$WorkingDirectory)
+    param([string]$Path, [string]$Arguments, [switch]$Hidden, [string]$WorkingDirectory,
+          [string]$Doing = 'Running', [string]$Done = 'Finished')
     $start = @{ FilePath = $Path; PassThru = $true; WindowStyle = $(if ($Hidden) { 'Hidden' } else { 'Normal' }) }
     if ($Path -like '*.msi') { $start.FilePath = 'msiexec.exe'; $start.ArgumentList = "/i `"$Path`" /qn /norestart" }
     elseif ($Arguments)      { $start.ArgumentList = $Arguments }
@@ -298,9 +312,12 @@ function Invoke-Program {
     $process = Start-Process @start
     $null = $process.Handle   # keeps ExitCode readable after the process ends (PowerShell 5.1 quirk)
     $timer = [Diagnostics.Stopwatch]::StartNew()
-    while (-not $process.WaitForExit(1000)) { Write-Status "Running... $(Format-Elapsed $timer.Elapsed)" }
-    Write-Status "Running... done ($(Format-Elapsed $timer.Elapsed))" -Done
-    if ($process.ExitCode -notin 0, 3010, 1641) { throw "Exited with code $($process.ExitCode)" }
+    while (-not $process.WaitForExit(1000)) { Write-Status "$Doing... $(Format-Elapsed $timer.Elapsed)" }
+    if ($process.ExitCode -notin 0, 3010, 1641) {
+        Write-Status "$Doing... stopped ($(Format-Elapsed $timer.Elapsed))" -Done
+        throw "exited with code $($process.ExitCode)"
+    }
+    Write-Status "$Done  ($(Format-Elapsed $timer.Elapsed))" -Done
 }
 
 # Runs the installer: an .exe with args, an .msi, or the .msi inside a .zip.
@@ -313,13 +330,14 @@ function Install-Package($app, $path) {
         if (-not $msi) { throw "No .msi inside $(Split-Path $path -Leaf)" }
         $path = $msi.FullName
     }
-    Invoke-Program -Path $path -Arguments "$($app.args)".Replace('{configs}', $ConfigsDir) -Hidden:$app.hidden
+    Invoke-Program -Path $path -Arguments "$($app.args)".Replace('{configs}', $ConfigsDir) -Hidden:$app.hidden `
+        -Doing 'Installing' -Done 'Installed'
 }
 
 # portable: unpacks the .zip or .7z into the folder that holds exe.
 function Install-Portable($app, $archive) {
     $folder = Split-Path (Expand-Path $app.exe)
-    Write-Info "Extracting to $folder"
+    Write-Status "Unpacking to $folder..."
     if (Test-Path $folder) { Remove-Item $folder -Recurse -Force }
     New-Item -ItemType Directory -Force -Path $folder | Out-Null
     if ($archive -like '*.zip') {
@@ -328,7 +346,7 @@ function Install-Portable($app, $archive) {
         $7zip = Join-Path $env:ProgramFiles '7-Zip\7z.exe'
         if (-not (Test-Path $7zip)) { throw '7-Zip is needed to unpack .7z files but is not installed' }
         & $7zip x $archive "-o$folder" -y | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "7-Zip failed with code $LASTEXITCODE" }
+        if ($LASTEXITCODE -ne 0) { Write-Status 'Unpacking failed' -Done; throw "7-Zip failed with code $LASTEXITCODE" }
     }
     # If everything sits in one top-level folder, move it up a level.
     $items = @(Get-ChildItem $folder)
@@ -336,6 +354,7 @@ function Install-Portable($app, $archive) {
         Get-ChildItem $items[0].FullName -Force | Move-Item -Destination $folder
         Remove-Item $items[0].FullName -Recurse -Force
     }
+    Write-Status "Unpacked to $folder" -Done
 }
 
 # command: runs it in PowerShell instead of downloading anything. With runAsUser it runs
@@ -349,8 +368,9 @@ function Invoke-InstallCommand($app) {
         New-Item -ItemType Directory -Force -Path (Split-Path $cmdFile) | Out-Null
         Set-Content -Path $cmdFile -Encoding ASCII -Value "@echo off`r`npowershell $arguments`r`n"
         Start-Process explorer.exe -ArgumentList "`"$cmdFile`""
+        Write-Done 'Started in its own window; it finishes on its own'
     } else {
-        Invoke-Program -Path 'powershell.exe' -Arguments $arguments -Hidden:$app.hidden
+        Invoke-Program -Path 'powershell.exe' -Arguments $arguments -Hidden:$app.hidden -Doing 'Running command' -Done 'Ran command'
     }
 }
 
@@ -381,7 +401,6 @@ function Restore-Config($config) {
         New-Item -ItemType Directory -Force -Path (Split-Path $to) | Out-Null
         Copy-Item $from $to -Force
     }
-    Write-Info "Restored $($config.Repo)"
 }
 
 
@@ -399,7 +418,7 @@ function Add-StartMenuShortcut($app) {
     $shortcut.WorkingDirectory = Split-Path $exe
     $shortcut.IconLocation = "$exe,0"
     $shortcut.Save()
-    Write-Info "Start Menu shortcut: $($app.name).lnk"
+    Write-Done "Added Start Menu shortcut '$($app.name)'"
 }
 
 # startAtLogon: scheduled task "<name> at logon" that starts exe with startArgs when you
@@ -422,13 +441,13 @@ function Register-LogonTask($app) {
         Description = "Starts $($app.name) at logon. Created by pc-setup."
     }
     Register-ScheduledTask @task -Force | Out-Null
-    Write-Info "Scheduled task '$taskName'"
+    Write-Done "Created logon task '$taskName'"
 }
 
 # afterInstall: runs one command hidden in cmd.exe, from exe's folder.
 function Invoke-AfterInstall($app, $command) {
-    Write-Info "Running: $command"
-    Invoke-Program -Path $env:ComSpec -Arguments "/c $command" -WorkingDirectory (Split-Path (Resolve-AppExe $app)) -Hidden
+    Invoke-Program -Path $env:ComSpec -Arguments "/c $command" -WorkingDirectory (Split-Path (Resolve-AppExe $app)) -Hidden `
+        -Doing "Running $command" -Done "Ran $command"
 }
 
 
@@ -445,7 +464,7 @@ function Add-Result($app, $step, $result, $detail = '') {
 # finishing touches can follow, $false when they can't yet.
 function Install-App($app) {
     if ((Test-AppInstalled $app) -and -not $Force) {
-        Write-Info 'Already installed'
+        Write-Note 'Already installed'
         Add-Result $app 'install' 'Skipped' 'already installed'
         return $true
     }
@@ -454,7 +473,6 @@ function Install-App($app) {
         if ($DryRun) { Add-Result $app 'install' 'DryRun' 'would run command'; return $false }
         Invoke-InstallCommand $app
         if ($app.runAsUser) {
-            Write-Problem "$($app.name) opened in its own window; it finishes on its own."
             Add-Result $app 'install' 'OK' 'started in its own window'
             return $false   # still running, so the rest would come too early
         }
@@ -463,16 +481,16 @@ function Install-App($app) {
     }
 
     $download = Resolve-Download $app
-    Write-Info "Source: $($download.Url)"
     if ($DryRun) {
-        Add-Result $app 'install' 'DryRun' "$($download.FileName) $(Get-DownloadSize $download.Url)"
+        $size = Get-DownloadSize $download.Url
+        Write-Done "Would download $($download.FileName)  ($size)"   # size, or why the link failed
+        Write-Note $download.Url
+        Add-Result $app 'install' 'DryRun' "$($download.FileName) $size"
         return $true   # as if installed, so the dry run also lists the later steps
     }
 
-    $file = Save-Download $download.Url $download.FileName $download.Sha256
-    if ($app.signer)   { Assert-Signature $file $app.signer }
+    $file = Save-Download $download.Url $download.FileName $download.Sha256 $app.signer
     if ($app.portable) { Install-Portable $app $file } else { Install-Package $app $file }
-    Write-Info 'Installed'
     Add-Result $app 'install' 'OK' $download.FileName
     return $true
 }
@@ -481,24 +499,26 @@ function Install-App($app) {
 function Restore-AppConfigs($app) {
     $configs = @(Get-AppConfigs $app)   # @() keeps a single config as a list
     if (-not $configs) { return }
-    if ($DryRun) { Add-Result $app 'configs' 'DryRun' "would restore $($configs.Count)"; return }
+    $names = ($configs | ForEach-Object Repo) -join ', '
+    if ($DryRun) { Write-Done "Would restore configs: $names"; Add-Result $app 'configs' 'DryRun' "would restore $($configs.Count)"; return }
 
     foreach ($process in $app.close) { Get-Process -Name $process -ErrorAction SilentlyContinue | Stop-Process -Force }
     Start-Sleep -Milliseconds 500
     $errors = @()
     foreach ($config in $configs) {
         try { Restore-Config $config }
-        catch { Write-Problem "FAILED: $($config.Repo): $($_.Exception.Message)"; $errors += "$($config.Repo): $($_.Exception.Message)" }
+        catch { Write-Failure "restoring $($config.Repo): $($_.Exception.Message)"; $errors += "$($config.Repo): $($_.Exception.Message)" }
     }
     if ($errors) { Add-Result $app 'configs' 'FAILED' ($errors -join '; ') }
-    else         { Add-Result $app 'configs' 'OK' "$($configs.Count) restored" }
+    else         { Write-Done "Restored configs: $names"; Add-Result $app 'configs' 'OK' "$($configs.Count) restored" }
 }
 
-# Runs one finishing touch and records the result.
-function Invoke-FinishingTouch($app, $name, [scriptblock]$action) {
-    if ($DryRun) { Add-Result $app $name 'DryRun' 'would run'; return }
+# Runs one finishing touch and records the result. $description finishes the sentence
+# "Would ..." in a dry run.
+function Invoke-FinishingTouch($app, $name, $description, [scriptblock]$action) {
+    if ($DryRun) { Write-Done "Would $description"; Add-Result $app $name 'DryRun' 'would run'; return }
     try   { & $action; Add-Result $app $name 'OK' }
-    catch { Write-Problem "FAILED: ${name}: $($_.Exception.Message)"; Add-Result $app $name 'FAILED' $_.Exception.Message }
+    catch { Write-Failure "${name}: $($_.Exception.Message)"; Add-Result $app $name 'FAILED' $_.Exception.Message }
 }
 
 function Invoke-App($app) {
@@ -506,7 +526,7 @@ function Invoke-App($app) {
     if (-not $ConfigsOnly) {
         try { $readyForRest = Install-App $app }
         catch {
-            Write-Problem "FAILED: $($_.Exception.Message)"
+            Write-Failure "install: $($_.Exception.Message)"
             Add-Result $app 'install' 'FAILED' $_.Exception.Message
             return
         }
@@ -515,10 +535,14 @@ function Invoke-App($app) {
     if (-not $SkipConfigs) { Restore-AppConfigs $app }
 
     if ($ConfigsOnly -or -not $readyForRest) { return }
-    if ($app.shortcut)     { Invoke-FinishingTouch $app 'shortcut'     { Add-StartMenuShortcut $app } }
-    if ($app.startAtLogon) { Invoke-FinishingTouch $app 'startAtLogon' { Register-LogonTask $app } }
+    if ($app.shortcut) {
+        Invoke-FinishingTouch $app 'shortcut' "add Start Menu shortcut '$($app.name)'" { Add-StartMenuShortcut $app }
+    }
+    if ($app.startAtLogon) {
+        Invoke-FinishingTouch $app 'startAtLogon' "create logon task '$($app.name) at logon'" { Register-LogonTask $app }
+    }
     foreach ($command in $app.afterInstall) {
-        Invoke-FinishingTouch $app 'afterInstall' { Invoke-AfterInstall $app $command }
+        Invoke-FinishingTouch $app 'afterInstall' "run $command" { Invoke-AfterInstall $app $command }
     }
 }
 
@@ -532,6 +556,8 @@ $entries = @(([IO.File]::ReadAllText($AppsFile) | ConvertFrom-Json).apps)
 
 $problems = @($entries | ForEach-Object { Test-AppEntry $_ })
 if ($problems) {
+    Write-Host 'apps.json has problems; nothing was changed:' -ForegroundColor Red
+    $problems | ForEach-Object { Write-Host "  - $_" -ForegroundColor Red }
     Show-FinalMessage -Warning -Title 'pc-setup: apps.json has problems' -Message (
         "Nothing was changed. Fix these in apps.json:`n`n" + ($problems -join "`n"))
     return
@@ -549,9 +575,21 @@ for ($i = 0; $i -lt $apps.Count; $i++) {
 }
 Show-OverallProgress -Completed
 
-# Summary
-Write-Host ($Results | Format-Table -AutoSize | Out-String -Width 160)
+# Summary: apps grouped by what happened, then failures with their reasons.
+function Get-AppNames($filter) { @($Results | Where-Object $filter | ForEach-Object App | Select-Object -Unique) }
+$groups = [ordered]@{
+    'Installed'               = Get-AppNames { $_.Step -eq 'install' -and $_.Result -eq 'OK' -and $_.Detail -ne 'started in its own window' }
+    'Already installed'       = Get-AppNames { $_.Step -eq 'install' -and $_.Result -eq 'Skipped' }
+    'Finishing in own window' = Get-AppNames { $_.Detail -eq 'started in its own window' }
+    'Configs restored'        = Get-AppNames { $_.Step -eq 'configs' -and $_.Result -eq 'OK' }
+    'Would install'           = Get-AppNames { $_.Step -eq 'install' -and $_.Result -eq 'DryRun' }
+}
+Write-Step 'Summary'
+foreach ($group in $groups.GetEnumerator()) {
+    if ($group.Value) { Write-Done ('{0,-24} {1}' -f "$($group.Key):", ($group.Value -join ', ')) }
+}
 $failed    = @($Results | Where-Object Result -eq 'FAILED')
+foreach ($row in $failed) { Write-Failure "$($row.App) ($($row.Step)): $($row.Detail)" }
 $done      = @($Results | Where-Object Result -eq 'OK').Count
 $skipped   = @($Results | Where-Object Result -eq 'Skipped').Count
 $ownWindow = @($Results | Where-Object Detail -eq 'started in its own window' | ForEach-Object App)
