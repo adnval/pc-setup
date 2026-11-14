@@ -8,7 +8,8 @@
     each app's configs from this PC into configs\ (backup-configs.ps1 runs this).
 
 .EXAMPLE
-    .\setup.ps1                     # everything
+    .\setup.ps1                     # menu: pick apps by number, one at a time
+    .\setup.ps1 -All                # every app, without the menu
     .\setup.ps1 -Only OBS,Discord   # just these apps
     .\setup.ps1 -Skip Office        # everything except these
     .\setup.ps1 -ConfigsOnly        # only restore configs
@@ -20,6 +21,7 @@
 param(
     [string[]]$Only,
     [string[]]$Skip,
+    [switch]$All,
     [switch]$ConfigsOnly,
     [switch]$SkipConfigs,
     [switch]$DryRun,
@@ -593,7 +595,9 @@ function Invoke-App($app) {
 # Bulleted lines for the pop-up.
 function Format-List($lines) { ($lines | ForEach-Object { "  - $_" }) -join "`n" }
 
-function Invoke-Setup($apps) {
+# -NoPopup: print the summary only (the menu runs this once per app it's given).
+function Invoke-Setup {
+    param($apps, [switch]$NoPopup)
     for ($i = 0; $i -lt $apps.Count; $i++) {
         Show-OverallProgress -Index ($i + 1) -Total $apps.Count -Name $apps[$i].name
         Write-Step "[$($i + 1)/$($apps.Count)] $($apps[$i].name)"
@@ -621,6 +625,7 @@ function Invoke-Setup($apps) {
 
     $done    = @($Results | Where-Object Result -eq 'OK').Count
     $skipped = $groups['Already installed'].Count
+    if ($NoPopup) { return }
     if ($DryRun) {
         Show-FinalMessage -Title 'pc-setup: dry run finished' -Message 'Dry run finished. Nothing was installed or changed.'
     } elseif ($failed) {
@@ -632,6 +637,29 @@ function Invoke-Setup($apps) {
         Show-FinalMessage -Title 'pc-setup: all done' -Message (
             "Everything completed successfully.`n`n$done step(s) done and $skipped app(s) already installed.$note`n`nA restart is recommended.")
     }
+}
+
+# Without -Only, -Skip or -All: a numbered list of the apps. Type a number to set that
+# app up; the list comes back afterwards for the next one, until you type 0.
+function Show-AppMenu($apps) {
+    while ($true) {
+        Write-Step 'Apps'
+        for ($i = 0; $i -lt $apps.Count; $i++) {
+            $mark = if (-not $ConfigsOnly -and (Test-AppInstalled $apps[$i])) { '  (installed)' } else { '' }
+            Write-Done ('{0,3}. {1}{2}' -f ($i + 1), $apps[$i].name, $mark)
+        }
+        Write-Done '  0. Exit'
+
+        $reply = (Read-Host "`n    Type a number and press Enter").Trim()
+        if ($reply -in '0', 'q', 'exit') { break }
+        if ($reply -notmatch '^\d+$' -or [long]$reply -lt 1 -or [long]$reply -gt $apps.Count) {
+            Write-Note "Type a number from 1 to $($apps.Count), or 0 to exit."
+            continue
+        }
+        $Results.Clear()
+        Invoke-Setup @($apps[[int]$reply - 1]) -NoPopup
+    }
+    Write-Host "`nDone. If you installed anything, a restart is recommended." -ForegroundColor Cyan
 }
 
 function Invoke-Backup($apps) {
@@ -691,4 +719,6 @@ $apps = @($entries | ForEach-Object { Complete-App $_ } | Where-Object {
     (-not ($ConfigsOnly -or $Backup) -or $_.configs)
 })
 
-if ($Backup) { Invoke-Backup $apps } else { Invoke-Setup $apps }
+if ($Backup) { Invoke-Backup $apps }
+elseif ($Only -or $Skip -or $All) { Invoke-Setup $apps }
+else { Show-AppMenu $apps }

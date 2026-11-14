@@ -22,7 +22,9 @@ It waits for you to close any app whose configs it copies, and lists any `servic
 irm https://raw.githubusercontent.com/adnval/pc-setup/main/bootstrap.ps1 | iex
 ```
 
-Run it again to retry anything that failed; installed apps are skipped.
+It lists the apps by number, marking the ones already installed. Type a number to install
+that app; the list comes back for the next one. Type `0` to exit. Installing an app that's
+already installed skips it (use `-Force` to reinstall).
 
 ### Options
 
@@ -30,6 +32,7 @@ From `$env:TEMP\pc-setup\pc-setup-main`, after `Set-ExecutionPolicy -Scope Proce
 
 | Command | Does |
 |---|---|
+| `.\setup.ps1 -All` | Every app in one go, without the menu |
 | `.\setup.ps1 -DryRun` | Show what would happen, change nothing |
 | `.\setup.ps1 -Only OBS,Discord` | Only these apps |
 | `.\setup.ps1 -Skip Office` | All apps except these |
@@ -38,7 +41,7 @@ From `$env:TEMP\pc-setup\pc-setup-main`, after `Set-ExecutionPolicy -Scope Proce
 | `.\setup.ps1 -Force` | Reinstall apps that are already installed |
 | `.\setup.ps1 -Backup` | Copy configs from this PC into `configs\` (what `backup-configs.ps1` runs) |
 
-`-Only` and `-Skip` also work with `backup-configs.ps1`, e.g. `.\backup-configs.ps1 -Only OBS`.
+`-Only`, `-Skip` and `-All` run without the menu. `-Only` and `-Skip` also work with `backup-configs.ps1`, e.g. `.\backup-configs.ps1 -Only OBS`.
 
 ## Apps
 
