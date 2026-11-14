@@ -57,6 +57,7 @@ GitHub are checked against the SHA256 that GitHub publishes.
 | `SpotX` | Spotify + SpotX | SpotX script | Runs in its own normal-user window |
 | `NotepadPP` | Notepad++ | GitHub | |
 | `Lightshot` | Lightshot | prntscr.com | |
+| `LGHub` | Logitech G HUB | logitech.com | Must be signed by Logitech |
 | `LosslessCut` | LosslessCut | GitHub | Portable; config; Start Menu shortcut |
 | `mpv` | mpv | GitHub | Portable; Start Menu shortcut; registers its file types* |
 | `PaintNET` | Paint.NET | GitHub | |

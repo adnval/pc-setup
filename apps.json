@@ -59,6 +59,14 @@
       "detect": "^Lightshot"
     },
     {
+      "name": "LGHub",
+      "source": "https://download01.logitech.com/web/ftp/pub/techsupport/gaming/lghub_installer.exe",
+      "file": "lghub_installer.exe",
+      "args": "--silent",
+      "signer": "Logitech",
+      "detect": "^Logitech G HUB"
+    },
+    {
       "name": "LosslessCut",
       "source": "github:mifi/lossless-cut",
       "file": "^LosslessCut-win-x64\\.7z$",
