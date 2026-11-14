@@ -109,6 +109,14 @@
       "shortcut": true
     },
     {
+      "name": "NvidiaProfileInspector",
+      "source": "github:Orbmu2k/nvidiaProfileInspector",
+      "file": "^nvidiaProfileInspector\\.zip$",
+      "portable": true,
+      "exe": "%ProgramFiles%\\NVIDIA Profile Inspector\\nvidiaProfileInspector.exe",
+      "shortcut": true
+    },
+    {
       "name": "Office",
       "source": "https://officecdn.microsoft.com/pr/wsus/setup.exe",
       "file": "odt-setup.exe",

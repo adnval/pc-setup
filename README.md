@@ -60,6 +60,7 @@ GitHub are checked against the SHA256 that GitHub publishes.
 | `Revo` | Revo Uninstaller | revouninstaller.com | |
 | `HWiNFO` | HWiNFO64 | SourceForge | Must be signed by REALiX |
 | `ZenTimings` | ZenTimings | GitHub | Portable; Start Menu shortcut |
+| `NvidiaProfileInspector` | NVIDIA Profile Inspector | GitHub | Portable; Start Menu shortcut |
 | `Office` | Microsoft 365 | Microsoft | Must be signed by Microsoft; apps chosen in `configs\Office\Configuration.xml` |
 
 \* To make mpv the default player: Settings → Apps → Default apps → mpv.
